@@ -1,0 +1,14 @@
+# build artifacts
+*.o
+*.obj
+*.exe
+*.out
+build/
+bin/
+*.log
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
