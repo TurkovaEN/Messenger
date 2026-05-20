@@ -60,10 +60,22 @@ int main(int argc, char** argv) {
 #else
     socklen_t clen = sizeof(caddr);
 #endif
-    sock_t cs = accept(s, (struct sockaddr*)&caddr, &clen);
-    if (cs == SOCK_INVALID) {
-        fprintf(stderr, "accept failed, err=%d\n", net_last_error());
-    } else {
+    printf("Server listening on port %d...\n", port);
+
+    while (1) {
+        struct sockaddr_in caddr;
+#ifdef _WIN32
+        int clen = sizeof(caddr);
+#else
+        socklen_t clen = sizeof(caddr);
+#endif
+
+        sock_t cs = accept(s, (struct sockaddr*)&caddr, &clen);
+        if (cs == SOCK_INVALID) {
+            fprintf(stderr, "accept failed, err=%d\n", net_last_error());
+            continue;
+        }
+
         printf("Client connected.\n");
         sock_close(cs);
     }
