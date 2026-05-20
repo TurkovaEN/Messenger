@@ -4,6 +4,10 @@
 
 #include "../../common/platform.h"
 
+#include "../../common/net_frame.h"
+
+
+
 static void usage(const char* prog) {
     fprintf(stderr, "Usage: %s <port>\n", prog);
 }
@@ -77,6 +81,16 @@ int main(int argc, char** argv) {
         }
 
         printf("Client connected.\n");
+char buf[1024];
+uint32_t n = 0;
+int rr = recv_frame(cs, buf, (uint32_t)(sizeof(buf) - 1), &n);
+if (rr == 0) {
+    buf[n] = '\0';
+    printf("Received frame: '%s'\n", buf);
+} else {
+    printf("recv_frame error: %d\n", rr);
+}
+
         sock_close(cs);
     }
 

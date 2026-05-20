@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "../../common/platform.h"
+#include "../../common/net_frame.h"
 
 static void usage(const char* prog) {
     fprintf(stderr, "Usage: %s <host> <port> <username>\n", prog);
@@ -49,7 +50,10 @@ int main(int argc, char** argv) {
     }
 
     printf("Connected to %s:%d as %s\n", host, port, user);
-
+const char* msg = "type=ping;text=hello";
+if (send_frame(s, msg, (uint32_t)strlen(msg)) != 0) {
+    fprintf(stderr, "send_frame failed, err=%d\n", net_last_error());
+}
     sock_close(s);
     net_cleanup();
     return 0;

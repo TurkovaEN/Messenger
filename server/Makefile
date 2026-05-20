@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -O2 -I../common
 TARGET=server
-SRCS=src/main.c ../common/platform.c
+SRCS=src/main.c ../common/platform.c ../common/net_frame.c
 OBJS=$(SRCS:.c=.o)
 
 all: $(TARGET)
