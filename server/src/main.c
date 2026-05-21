@@ -7,6 +7,7 @@
 #include <string.h>
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
+#include "logger.h"
 
 #define MAX_CLIENTS 64
 #define MAX_USER    32
@@ -19,7 +20,7 @@ typedef struct Client {
 } Client;
 
 static void usage(const char* prog) {
-    fprintf(stderr, "Usage: %s <port>\n", prog);
+    fprintf(stderr, "Usage: %s <port> <log_path>\n", prog);
 }
 
 static int add_client(Client* clients, sock_t s) {
@@ -75,6 +76,7 @@ static int handle_frame(Client* clients, Client* c, const char* payload) {
         send_frame(c->sock, info, (uint32_t)strlen(info));
 
         printf("User logged in: %s\n", c->user);
+log_info("Login user=%s", c->user);
         return 0;
     }
 if (strcmp(type, "msg") == 0) {
@@ -102,6 +104,7 @@ if (strcmp(type, "msg") == 0) {
     if (dst < 0) {
         const char* err = "type=error;text=user offline";
         send_frame(c->sock, err, (uint32_t)strlen(err));
+log_info("MSG from=%s to=%s failed: offline", c->user, to);
         return 0;
     }
 
@@ -116,6 +119,7 @@ if (strcmp(type, "msg") == 0) {
     const char* ok = "type=info;text=delivered";
     send_frame(c->sock, ok, (uint32_t)strlen(ok));
     printf("MSG %s -> %s: %s\n", c->user, to, text);
+log_info("MSG from=%s to=%s text=%s", c->user, to, text);
     return 0;
 }
 
@@ -126,14 +130,21 @@ if (strcmp(type, "msg") == 0) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) { usage(argv[0]); return 1; }
+    if (argc != 3) { usage(argv[0]); return 1; }
     int port = atoi(argv[1]);
+const char* log_path = argv[2];
     if (port <= 0 || port > 65535) { fprintf(stderr, "Bad port\n"); return 1; }
 
     if (net_init() != 0) {
         fprintf(stderr, "net_init failed, err=%d\n", net_last_error());
         return 1;
     }
+if (log_init(log_path) != 0) {
+    fprintf(stderr, "Cannot open log file: %s\n", log_path);
+    net_cleanup();
+    return 1;
+}
+log_info("Server start (port=%d)", port);
 
     sock_t ls = socket(AF_INET, SOCK_STREAM, 0);
     if (ls == SOCK_INVALID) {
@@ -210,7 +221,8 @@ int main(int argc, char** argv) {
                     sock_close(cs);
                 } else {
                     printf("Client connected (slot=%d).\n", idx);
-                }
+log_info("Client connected (slot=%d)", idx);                
+}
             }
         }
 
@@ -224,6 +236,8 @@ int main(int argc, char** argv) {
             if (rr != 0) {
                 printf("Client disconnected (slot=%d, user=%s)\n", i,
                        clients[i].user[0] ? clients[i].user : "<none>");
+log_info("Client disconnected (slot=%d, user=%s)", i,
+         clients[i].user[0] ? clients[i].user : "<none>");
                 remove_client(clients, i);
                 continue;
             }
