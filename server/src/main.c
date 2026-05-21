@@ -145,6 +145,13 @@ static int handle_frame(Client* clients, Room* rooms, int client_idx, Client* c,
             send_frame(c->sock, err, (uint32_t)strlen(err));
             return 0;
         }
+        int existing = find_by_user(clients, user);
+  if (existing >= 0 && existing != client_idx) {
+   const char* err = "type=error;text=user already online";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   log_info("Login rejected: user=%s already online", user);
+   return 0;
+  }
         strncpy(c->user, user, sizeof(c->user) - 1);
         c->user[sizeof(c->user) - 1] = '\0';
 
