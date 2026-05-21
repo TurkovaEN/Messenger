@@ -163,6 +163,32 @@ static int users_append(const char* path, const char* user) {
  return 0;
 }
 
+static void sort2(const char** a, const char** b) {
+ if (strcmp(*a, *b) > 0) {
+  const char* t = *a;
+  *a = *b;
+  *b = t;
+ }
+}
+
+static void history_path_dm(char* out, size_t out_sz, const char* u1, const char* u2) {
+ const char* a = u1;
+ const char* b = u2;
+ sort2(&a, &b);
+ snprintf(out, out_sz, "server/history/dm_%s_%s.txt", a, b);
+}
+
+static void history_path_room(char* out, size_t out_sz, const char* room) {
+ snprintf(out, out_sz, "server/history/room_%s.txt", room);
+}
+
+static void history_append_line(const char* path, const char* line) {
+ FILE* f = fopen(path, "a");
+ if (!f) return;
+ fprintf(f, "%s\n", line);
+ fclose(f);
+}
+
 static int handle_frame(Client* clients, Room* rooms, const char* users_path, int client_idx, Client* c, const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
@@ -266,6 +292,12 @@ if (strcmp(type, "msg") == 0) {
         const char* err = "type=error;text=user offline";
         send_frame(c->sock, err, (uint32_t)strlen(err));
 log_info("MSG from=%s to=%s failed: offline", c->user, to);
+ char hpath[256];
+ history_path_dm(hpath, sizeof(hpath), c->user, to);
+
+ char hline[1400];
+ snprintf(hline, sizeof(hline), "from=%s;to=%s;text=%s", c->user, to, text);
+ history_append_line(hpath, hline);
         return 0;
     }
 
@@ -406,6 +438,12 @@ log_info("MSG from=%s to=%s text=%s", c->user, to, text);
   const char* ok = "type=info;text=room message sent";
   send_frame(c->sock, ok, (uint32_t)strlen(ok));
   log_info("ROOM msg from=%s room=%s text=%s", c->user, room, text);
+   char hpath[256];
+ history_path_room(hpath, sizeof(hpath), room);
+
+ char hline[1400];
+ snprintf(hline, sizeof(hline), "from=%s;room=%s;text=%s", c->user, room, text);
+ history_append_line(hpath, hline);
   return 0;
  }
 
