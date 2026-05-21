@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "../../common/platform.h"
-#include "../../common/net_frame.h"
+#include "client_threads.h"
 
 static void usage(const char* prog) {
     fprintf(stderr, "Usage: %s <host> <port> <username>\n", prog);
@@ -51,23 +51,9 @@ int main(int argc, char** argv) {
 
     printf("Connected to %s:%d as %s\n", host, port, user);
 
- char login_msg[256];
-snprintf(login_msg, sizeof(login_msg), "type=login;user=%s", user);
+    // run_client will send login, start recv thread, read commands from stdin
+    int rc = run_client(s, user);
 
-if (send_frame(s, login_msg, (uint32_t)strlen(login_msg)) != 0) {
-    fprintf(stderr, "send_frame(login) failed, err=%d\n", net_last_error());
-}
-char buf[1024];
-uint32_t n = 0;
-int rr = recv_frame(s, buf, (uint32_t)(sizeof(buf) - 1), &n);
-if (rr == 0) {
-    buf[n] = '\0';
-    printf("Server says: %s\n", buf);
-} else {
-    printf("recv_frame failed: %d\n", rr);
-}
-
-    sock_close(s);
     net_cleanup();
-    return 0;
+    return rc;
 }
