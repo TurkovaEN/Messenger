@@ -292,12 +292,6 @@ if (strcmp(type, "msg") == 0) {
         const char* err = "type=error;text=user offline";
         send_frame(c->sock, err, (uint32_t)strlen(err));
 log_info("MSG from=%s to=%s failed: offline", c->user, to);
- char hpath[256];
- history_path_dm(hpath, sizeof(hpath), c->user, to);
-
- char hline[1400];
- snprintf(hline, sizeof(hline), "from=%s;to=%s;text=%s", c->user, to, text);
- history_append_line(hpath, hline);
         return 0;
     }
 
@@ -313,6 +307,12 @@ log_info("MSG from=%s to=%s failed: offline", c->user, to);
     send_frame(c->sock, ok, (uint32_t)strlen(ok));
     printf("MSG %s -> %s: %s\n", c->user, to, text);
 log_info("MSG from=%s to=%s text=%s", c->user, to, text);
+char hpath[256];
+ history_path_dm(hpath, sizeof(hpath), c->user, to);
+
+ char hline[1400];
+ snprintf(hline, sizeof(hline), "from=%s;to=%s;text=%s", c->user, to, text);
+ history_append_line(hpath, hline);
     return 0;
 }
  if (strcmp(type, "room_create") == 0) {
