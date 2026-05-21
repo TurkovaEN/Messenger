@@ -4,6 +4,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifndef _WIN32
+ #include <signal.h>
+#endif
+
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
 
@@ -18,8 +22,11 @@
 #endif
 
 typedef struct RecvCtx {
-    sock_t s;
-    volatile int running;
+ sock_t s;
+ volatile int running;
+#ifndef _WIN32
+ pthread_t main_thread;
+#endif
 } RecvCtx;
 
 static void trim_newline(char* s) {
@@ -85,16 +92,24 @@ static void* recv_thread_fn(void* arg)
     RecvCtx* ctx = (RecvCtx*)arg;
     char payload[2048 + 1];
 
-    while (ctx->running) {
-        uint32_t n = 0;
-        int rr = recv_frame(ctx->s, payload, 2048, &n);
-        if (rr != 0) break;
-        payload[n] = '\0';
-        print_incoming(payload);
-        fflush(stdout);
-    }
+while (ctx->running) {
+ uint32_t n = 0;
+ int rr = recv_frame(ctx->s, payload, 2048, &n);
+ if (rr != 0) {
+  printf("[info] connection closed\n");
+  fflush(stdout);
+  break;
+ }
+ payload[n] = '\0';
+ print_incoming(payload);
+ fflush(stdout);
+}
+ctx->running = 0;
 
-    ctx->running = 0;
+#ifndef _WIN32
+// Interrupt blocking fgets in main thread
+pthread_kill(ctx->main_thread, SIGINT);
+#endif
 #ifdef _WIN32
     return 0;
 #else
@@ -133,6 +148,9 @@ int run_client(sock_t s, const char* username) {
     RecvCtx ctx;
     ctx.s = s;
     ctx.running = 1;
+    #ifndef _WIN32
+ctx.main_thread = pthread_self();
+#endif
 
     thread_t thr;
     if (start_thread(&thr, &ctx) != 0) {
