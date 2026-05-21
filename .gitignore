@@ -44,3 +44,4 @@ client/client
 server/logs/*.log
 client/logs/*.log
 server/data/users.txt
+server/history/*.txt
