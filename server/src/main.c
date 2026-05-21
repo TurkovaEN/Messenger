@@ -163,6 +163,24 @@ static int handle_frame(Client* clients, Room* rooms, int client_idx, Client* c,
 log_info("Login user=%s", c->user);
         return 0;
     }
+     if (strcmp(type, "users") == 0) {
+  char list[1024];
+  list[0] = '\0';
+
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+   if (!clients[i].used) continue;
+   if (!clients[i].user[0]) continue;
+
+   if (list[0]) strncat(list, ",", sizeof(list) - strlen(list) - 1);
+   strncat(list, clients[i].user, sizeof(list) - strlen(list) - 1);
+  }
+
+  char out[1200];
+  snprintf(out, sizeof(out), "type=users;list=%s", list);
+  send_frame(c->sock, out, (uint32_t)strlen(out));
+  return 0;
+ }
+
 if (strcmp(type, "msg") == 0) {
     if (!c->user[0]) {
         const char* err = "type=error;text=not logged in";
