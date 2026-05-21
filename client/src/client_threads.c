@@ -40,6 +40,12 @@ static int validate_room_name(const char* room) {
 static void print_incoming(const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
+         if (strcmp(type, "users") == 0) {
+  char list[1600] = {0};
+  kv_get(payload, "list", list, sizeof(list));
+  printf("[users] %s\n", list[0] ? list : "<empty>");
+  return;
+ }
         printf("[server] %s\n", payload);
         return;
     }
@@ -140,6 +146,7 @@ int run_client(sock_t s, const char* username) {
  printf(" /join <room>\n");
  printf(" /leave <room>\n");
  printf(" /room <room> <text>\n");
+ printf(" /users\n");
  printf(" /quit\n");
 
     char line[1400];
@@ -237,6 +244,15 @@ if (strncmp(line, "/create ", 8) == 0) {
 
   char out[2048];
   snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+  if (strcmp(line, "/users") == 0) {
+  const char* out = "type=users";
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
