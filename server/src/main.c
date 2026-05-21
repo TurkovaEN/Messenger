@@ -8,10 +8,18 @@
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
 #include "logger.h"
+#include <signal.h>
 
 #define MAX_CLIENTS 64
 #define MAX_USER    32
 #define MAX_PAYLOAD 2048
+
+static volatile sig_atomic_t g_stop = 0;
+
+static void on_signal(int sig) {
+    (void)sig;
+    g_stop = 1;
+}
 
 typedef struct Client {
     sock_t sock;
@@ -146,6 +154,9 @@ if (log_init(log_path) != 0) {
 }
 log_info("Server start (port=%d)", port);
 
+signal(SIGINT, on_signal);
+signal(SIGTERM, on_signal);
+
     sock_t ls = socket(AF_INET, SOCK_STREAM, 0);
     if (ls == SOCK_INVALID) {
         fprintf(stderr, "socket failed, err=%d\n", net_last_error());
@@ -186,70 +197,76 @@ log_info("Server start (port=%d)", port);
     memset(clients, 0, sizeof(clients));
     for (int i = 0; i < MAX_CLIENTS; i++) clients[i].sock = SOCK_INVALID;
 
-    while (1) {
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(ls, &rfds);
+while (!g_stop) {
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(ls, &rfds);
 
-        sock_t maxfd = ls;
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i].used) {
-                FD_SET(clients[i].sock, &rfds);
-                if (clients[i].sock > maxfd) maxfd = clients[i].sock;
-            }
-        }
-
-        int rc = select((int)(maxfd + 1), &rfds, NULL, NULL, NULL);
-        if (rc < 0) {
-            fprintf(stderr, "select failed, err=%d\n", net_last_error());
-            continue;
-        }
-
-        if (FD_ISSET(ls, &rfds)) {
-            struct sockaddr_in caddr;
-#ifdef _WIN32
-            int clen = sizeof(caddr);
-#else
-            socklen_t clen = sizeof(caddr);
-#endif
-            sock_t cs = accept(ls, (struct sockaddr*)&caddr, &clen);
-            if (cs != SOCK_INVALID) {
-                int idx = add_client(clients, cs);
-                if (idx < 0) {
-                    const char* err = "type=error;text=server full";
-                    send_frame(cs, err, (uint32_t)strlen(err));
-                    sock_close(cs);
-                } else {
-                    printf("Client connected (slot=%d).\n", idx);
-log_info("Client connected (slot=%d)", idx);                
-}
-            }
-        }
-
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (!clients[i].used) continue;
-            if (!FD_ISSET(clients[i].sock, &rfds)) continue;
-
-            char payload[MAX_PAYLOAD + 1];
-            uint32_t n = 0;
-            int rr = recv_frame(clients[i].sock, payload, (uint32_t)MAX_PAYLOAD, &n);
-            if (rr != 0) {
-                printf("Client disconnected (slot=%d, user=%s)\n", i,
-                       clients[i].user[0] ? clients[i].user : "<none>");
-log_info("Client disconnected (slot=%d, user=%s)", i,
-         clients[i].user[0] ? clients[i].user : "<none>");
-                remove_client(clients, i);
-                continue;
-            }
-
-            payload[n] = '\0';
-            handle_frame(clients, &clients[i], payload);
+    sock_t maxfd = ls;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].used) {
+            FD_SET(clients[i].sock, &rfds);
+            if (clients[i].sock > maxfd) maxfd = clients[i].sock;
         }
     }
 
-    // unreachable for now
-    sock_close(ls);
-    net_cleanup();
-    return 0;
-}
+    int rc = select((int)(maxfd + 1), &rfds, NULL, NULL, NULL);
+    if (rc < 0) {
+#ifndef _WIN32
+        if (net_last_error() == EINTR) continue;
+#endif
+        fprintf(stderr, "select failed, err=%d\n", net_last_error());
+        continue;
+    }
 
+    if (FD_ISSET(ls, &rfds)) {
+        struct sockaddr_in caddr;
+#ifdef _WIN32
+        int clen = sizeof(caddr);
+#else
+        socklen_t clen = sizeof(caddr);
+#endif
+        sock_t cs = accept(ls, (struct sockaddr*)&caddr, &clen);
+        if (cs != SOCK_INVALID) {
+            int idx = add_client(clients, cs);
+            if (idx < 0) {
+                const char* err = "type=error;text=server full";
+                send_frame(cs, err, (uint32_t)strlen(err));
+                sock_close(cs);
+            } else {
+                printf("Client connected (slot=%d).\n", idx);
+                log_info("Client connected (slot=%d)", idx);
+            }
+        }
+    }
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!clients[i].used) continue;
+        if (!FD_ISSET(clients[i].sock, &rfds)) continue;
+
+        char payload[MAX_PAYLOAD + 1];
+        uint32_t n = 0;
+        int rr = recv_frame(clients[i].sock, payload, (uint32_t)MAX_PAYLOAD, &n);
+        if (rr != 0) {
+            printf("Client disconnected (slot=%d, user=%s)\n", i,
+                   clients[i].user[0] ? clients[i].user : "<none>");
+            log_info("Client disconnected (slot=%d, user=%s)", i,
+                     clients[i].user[0] ? clients[i].user : "<none>");
+            remove_client(clients, i);
+            continue;
+        }
+
+        payload[n] = '\0';
+        handle_frame(clients, &clients[i], payload);
+    }
+}
+for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i].used) remove_client(clients, i);
+}
+sock_close(ls);
+
+log_info("Server stop");
+log_close();
+net_cleanup();
+return 0;
+}
