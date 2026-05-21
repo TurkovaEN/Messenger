@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../common/urlcodec.h"
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
 #include "logger.h"
@@ -227,9 +228,12 @@ static int history_send_last_lines(sock_t s, const char* chat, const char* path,
   int idx = (start + i) % limit;
   if (!lines[idx]) continue;
 
-  char out[2048];
-  snprintf(out, sizeof(out), "type=history_item;chat=%s;line=%s", chat, lines[idx]);
-  send_frame(s, out, (uint32_t)strlen(out));
+  char line_net[1800];
+if (url_encode(lines[idx], line_net, sizeof(line_net)) != 0) continue;
+
+char out[2048];
+snprintf(out, sizeof(out), "type=history_item;chat=%s;line=%s", chat, line_net);
+send_frame(s, out, (uint32_t)strlen(out));
  }
 
  for (int i = 0; i < limit; i++) free(lines[i]);
@@ -375,18 +379,24 @@ if (strcmp(type, "msg") == 0) {
     }
 
     char to[MAX_USER];
-    char text[1024];
+    char text_enc[1024];
+char text[1024];
 
     if (!kv_get(payload, "to", to, sizeof(to))) {
         const char* err = "type=error;text=missing to";
         send_frame(c->sock, err, (uint32_t)strlen(err));
         return 0;
     }
-    if (!kv_get(payload, "text", text, sizeof(text))) {
+    if (!kv_get(payload, "text", text_enc, sizeof(text_enc))) {
         const char* err = "type=error;text=missing text";
         send_frame(c->sock, err, (uint32_t)strlen(err));
         return 0;
     }
+    if (url_decode(text_enc, text, sizeof(text)) != 0) {
+ const char* err = "type=error;text=bad text encoding";
+ send_frame(c->sock, err, (uint32_t)strlen(err));
+ return 0;
+}
 
     int dst = find_by_user(clients, to);
     if (dst < 0) {
@@ -396,14 +406,20 @@ log_info("MSG from=%s to=%s failed: offline", c->user, to);
         return 0;
     }
 
-    char out[1400];
-    snprintf(out, sizeof(out), "type=deliver;from=%s;text=%s", c->user, text);
-    if (send_frame(clients[dst].sock, out, (uint32_t)strlen(out)) != 0) {
-        const char* err = "type=error;text=deliver failed";
-        send_frame(c->sock, err, (uint32_t)strlen(err));
-        return 0;
-    }
+    char text_net[1400];
+if (url_encode(text, text_net, sizeof(text_net)) != 0) {
+ const char* err = "type=error;text=text too long";
+ send_frame(c->sock, err, (uint32_t)strlen(err));
+ return 0;
+}
 
+char out[1400];
+snprintf(out, sizeof(out), "type=deliver;from=%s;text=%s", c->user, text_net);
+if (send_frame(clients[dst].sock, out, (uint32_t)strlen(out)) != 0) {
+ const char* err = "type=error;text=deliver failed";
+ send_frame(c->sock, err, (uint32_t)strlen(err));
+ return 0;
+}
     const char* ok = "type=info;text=delivered";
     send_frame(c->sock, ok, (uint32_t)strlen(ok));
     printf("MSG %s -> %s: %s\n", c->user, to, text);
@@ -509,17 +525,23 @@ char hpath[256];
    return 0;
   }
   char room[MAX_ROOM_NAME];
-  char text[1024];
+  char text_enc[1024];
+char text[1024];
   if (!kv_get(payload, "room", room, sizeof(room))) {
    const char* err = "type=error;text=missing room";
    send_frame(c->sock, err, (uint32_t)strlen(err));
    return 0;
   }
-  if (!kv_get(payload, "text", text, sizeof(text))) {
+  if (!kv_get(payload, "text", text_enc, sizeof(text_enc))) {
    const char* err = "type=error;text=missing text";
    send_frame(c->sock, err, (uint32_t)strlen(err));
    return 0;
   }
+  if (url_decode(text_enc, text, sizeof(text)) != 0) {
+ const char* err = "type=error;text=bad text encoding";
+ send_frame(c->sock, err, (uint32_t)strlen(err));
+ return 0;
+}
   int ri = find_room(rooms, room);
   if (ri < 0) {
    const char* err = "type=error;text=no such room";
@@ -533,7 +555,13 @@ char hpath[256];
   }
 
   char out[MAX_PAYLOAD];
-  snprintf(out, sizeof(out), "type=room_deliver;room=%s;from=%s;text=%s", room, c->user, text);
+  char text_net[1400];
+if (url_encode(text, text_net, sizeof(text_net)) != 0) {
+ const char* err = "type=error;text=text too long";
+ send_frame(c->sock, err, (uint32_t)strlen(err));
+ return 0;
+}
+  snprintf(out, sizeof(out), "type=room_deliver;room=%s;from=%s;text=%s", room, c->user, text_net);
   room_broadcast(&rooms[ri], clients, out, -1);
 
   const char* ok = "type=info;text=room message sent";
