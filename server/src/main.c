@@ -42,7 +42,17 @@ static void remove_client(Client* clients, int idx) {
     }
 }
 
-static int handle_frame(Client* c, const char* payload) {
+static int find_by_user(Client* clients, const char* user) {
+    if (!user || !user[0]) return -1;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].used && clients[i].user[0] && strcmp(clients[i].user, user) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int handle_frame(Client* clients, Client* c, const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
         return 0;
@@ -65,6 +75,47 @@ static int handle_frame(Client* c, const char* payload) {
         printf("User logged in: %s\n", c->user);
         return 0;
     }
+if (strcmp(type, "msg") == 0) {
+    if (!c->user[0]) {
+        const char* err = "type=error;text=not logged in";
+        send_frame(c->sock, err, (uint32_t)strlen(err));
+        return 0;
+    }
+
+    char to[MAX_USER];
+    char text[1024];
+
+    if (!kv_get(payload, "to", to, sizeof(to))) {
+        const char* err = "type=error;text=missing to";
+        send_frame(c->sock, err, (uint32_t)strlen(err));
+        return 0;
+    }
+    if (!kv_get(payload, "text", text, sizeof(text))) {
+        const char* err = "type=error;text=missing text";
+        send_frame(c->sock, err, (uint32_t)strlen(err));
+        return 0;
+    }
+
+    int dst = find_by_user(clients, to);
+    if (dst < 0) {
+        const char* err = "type=error;text=user offline";
+        send_frame(c->sock, err, (uint32_t)strlen(err));
+        return 0;
+    }
+
+    char out[1400];
+    snprintf(out, sizeof(out), "type=deliver;from=%s;text=%s", c->user, text);
+    if (send_frame(clients[dst].sock, out, (uint32_t)strlen(out)) != 0) {
+        const char* err = "type=error;text=deliver failed";
+        send_frame(c->sock, err, (uint32_t)strlen(err));
+        return 0;
+    }
+
+    const char* ok = "type=info;text=delivered";
+    send_frame(c->sock, ok, (uint32_t)strlen(ok));
+    printf("MSG %s -> %s: %s\n", c->user, to, text);
+    return 0;
+}
 
     // for now: unknown types
     const char* info = "type=info;text=unknown command";
@@ -176,7 +227,7 @@ int main(int argc, char** argv) {
             }
 
             payload[n] = '\0';
-            handle_frame(&clients[i], payload);
+            handle_frame(clients, &clients[i], payload);
         }
     }
 
