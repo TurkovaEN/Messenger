@@ -39,7 +39,7 @@ typedef struct Room {
 } Room;
 
 static void usage(const char* prog) {
-    fprintf(stderr, "Usage: %s <port> <log_path>\n", prog);
+    fprintf(stderr, "Usage: %s <port> <log_path> [users_path]\n", prog);
 }
 
 static int add_client(Client* clients, sock_t s) {
@@ -132,11 +132,64 @@ static void room_broadcast(Room* r, Client* clients, const char* msg, int skip_i
  }
 }
 
-static int handle_frame(Client* clients, Room* rooms, int client_idx, Client* c, const char* payload) {
+static int users_ensure_file(const char* path) {
+ FILE* f = fopen(path, "a");
+ if (!f) return -1;
+ fclose(f);
+ return 0;
+}
+
+static int users_exists(const char* path, const char* user) {
+ if (!path || !user || !user[0]) return 0;
+ FILE* f = fopen(path, "r");
+ if (!f) return 0;
+
+ char line[128];
+ while (fgets(line, sizeof(line), f)) {
+  size_t n = strlen(line);
+  while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) { line[n-1] = '\0'; n--; }
+  if (strcmp(line, user) == 0) { fclose(f); return 1; }
+ }
+ fclose(f);
+ return 0;
+}
+
+static int users_append(const char* path, const char* user) {
+ if (!path || !user || !user[0]) return -1;
+ FILE* f = fopen(path, "a");
+ if (!f) return -1;
+ fprintf(f, "%s\n", user);
+ fclose(f);
+ return 0;
+}
+
+static int handle_frame(Client* clients, Room* rooms, const char* users_path, int client_idx, Client* c, const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
         return 0;
     }
+     if (strcmp(type, "register") == 0) {
+  char user[MAX_USER];
+  if (!kv_get(payload, "user", user, sizeof(user))) {
+   const char* err = "type=error;text=missing user";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (users_exists(users_path, user)) {
+   const char* err = "type=error;text=user already registered";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (users_append(users_path, user) != 0) {
+   const char* err = "type=error;text=cannot register";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  const char* ok = "type=info;text=registered";
+  send_frame(c->sock, ok, (uint32_t)strlen(ok));
+  log_info("Register user=%s", user);
+  return 0;
+ }
 
     if (strcmp(type, "login") == 0) {
         char user[MAX_USER];
@@ -150,6 +203,12 @@ static int handle_frame(Client* clients, Room* rooms, int client_idx, Client* c,
    const char* err = "type=error;text=user already online";
    send_frame(c->sock, err, (uint32_t)strlen(err));
    log_info("Login rejected: user=%s already online", user);
+   return 0;
+  }
+   if (!users_exists(users_path, user)) {
+   const char* err = "type=error;text=user not registered";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   log_info("Login rejected: user=%s not registered", user);
    return 0;
   }
         strncpy(c->user, user, sizeof(c->user) - 1);
@@ -357,9 +416,10 @@ log_info("MSG from=%s to=%s text=%s", c->user, to, text);
 }
 
 int main(int argc, char** argv) {
-    if (argc != 3) { usage(argv[0]); return 1; }
-    int port = atoi(argv[1]);
-const char* log_path = argv[2];
+ if (argc != 3 && argc != 4) { usage(argv[0]); return 1; }
+ int port = atoi(argv[1]);
+ const char* log_path = argv[2];
+ const char* users_path = (argc == 4) ? argv[3] : "server/data/users.txt";
     if (port <= 0 || port > 65535) { fprintf(stderr, "Bad port\n"); return 1; }
 
     if (net_init() != 0) {
@@ -372,6 +432,15 @@ if (log_init(log_path) != 0) {
     return 1;
 }
 log_info("Server start (port=%d)", port);
+
+if (users_ensure_file(users_path) != 0) {
+  fprintf(stderr, "Cannot open users file: %s\n", users_path);
+  log_info("Cannot open users file: %s", users_path);
+  log_close();
+  net_cleanup();
+  return 1;
+ }
+ log_info("Users file: %s", users_path);
 
 signal(SIGINT, on_signal);
 signal(SIGTERM, on_signal);
@@ -482,7 +551,7 @@ while (!g_stop) {
         }
 
         payload[n] = '\0';
-        handle_frame(clients, rooms, i, &clients[i], payload);
+        handle_frame(clients, rooms, users_path, i, &clients[i], payload);
     }
 }
 
