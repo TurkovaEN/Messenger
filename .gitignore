@@ -1,18 +1,45 @@
-# build artifacts
+# =====================
+# Build artifacts
+# =====================
 *.o
 *.obj
 *.exe
 *.out
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.log
+*.recipe
+
 build/
 bin/
-*.log
 
-# IDE
+# Linux build outputs (do not commit binaries)
+server/server
+client/client
+
+# =====================
+# IDE / editors
+# =====================
 .vs/
 .vscode/
 *.user
 *.suo
 
-# linux binaries
-server/server
-client/client
+# Visual Studio build directories
+**/Debug/
+**/Release/
+**/x64/
+**/Win32/
+
+# =====================
+# Logs (keep directory via .gitkeep)
+# =====================
+server/logs/*.log
+client/logs/*.log
