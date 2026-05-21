@@ -485,6 +485,17 @@ while (!g_stop) {
         handle_frame(clients, rooms, i, &clients[i], payload);
     }
 }
+
+{
+ const char* msg = "type=info;text=server shutting down";
+ for (int i = 0; i < MAX_CLIENTS; i++) {
+  if (!clients[i].used) continue;
+  // ignore send errors: clients may be already disconnected
+  send_frame(clients[i].sock, msg, (uint32_t)strlen(msg));
+ }
+ log_info("Shutdown: notified clients");
+}
+
 for (int i = 0; i < MAX_CLIENTS; i++) {
     if (clients[i].used) remove_client(clients, i);
 }
