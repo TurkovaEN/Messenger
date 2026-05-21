@@ -32,3 +32,19 @@ Payload format examples (key=value; pairs):
 
 - Error:
   - `type=error;text=<text>`
+
+  ## Group chats (rooms)
+
+### Client -> Server
+- Create room:
+  - `type=room_create;room=<name>`
+- Join room:
+  - `type=room_join;room=<name>`
+- Leave room:
+  - `type=room_leave;room=<name>`
+- Send message to room:
+  - `type=room_msg;room=<name>;text=<text>`
+
+### Server -> Client
+- Delivery to room members:
+  - `type=room_deliver;room=<name>;from=<user>;text=<text>`
