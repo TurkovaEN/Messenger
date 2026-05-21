@@ -72,8 +72,10 @@ NetClient::NetClient(QObject* parent)
     connect(&m_sock, &QTcpSocket::errorOccurred, this, &NetClient::onError);
 }
 
-void NetClient::connectTo(const QString& host, quint16 port, const QString& user) {
+void NetClient::connectTo(const QString& host, quint16 port, const QString& user, bool doRegister) {
     m_user = user;
+    m_doRegister = doRegister;
+    m_loggedIn = false;
     m_buf.clear();
     m_sock.abort();
     m_sock.connectToHost(host, port);
@@ -98,9 +100,12 @@ void NetClient::sendFrame(const QByteArray& payload) {
 }
 
 void NetClient::onConnected() {
-    QByteArray payload = "type=login;user=" + m_user.toUtf8();
-    sendFrame(payload);
-    emit connected();
+    if (m_doRegister) {
+        QByteArray reg = "type=register;user=" + m_user.toUtf8();
+        sendFrame(reg);
+    }
+    QByteArray login = "type=login;user=" + m_user.toUtf8();
+    sendFrame(login);
 }
 
 void NetClient::onReadyRead() {
@@ -141,15 +146,25 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
     }
 
     if (type == "info" || type == "error") {
-        QByteArray t = kvGet(payload, "text").toUtf8();
-        emit message(QString("[%1] %2").arg(type, QString::fromUtf8(t)));
-        return;
+    QByteArray t = kvGet(payload, "text").toUtf8();
+    QString text = QString::fromUtf8(t);
+
+    if (type == "info") {
+        if (!m_loggedIn && text.startsWith("login ok")) {
+            m_loggedIn = true;
+            emit connected();
+        }
     }
+
+    emit message(QString("[%1] %2").arg(type, text));
+    return;
+}
 
     emit message("[raw] " + payload);
 }
 
 void NetClient::onDisconnected() {
+    m_loggedIn = false;
     emit disconnected();
 }
 

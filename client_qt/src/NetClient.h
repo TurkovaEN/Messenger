@@ -8,8 +8,9 @@ class NetClient : public QObject {
 public:
     explicit NetClient(QObject* parent = nullptr);
 
-    void connectTo(const QString& host, quint16 port, const QString& user);
+    void connectTo(const QString& host, quint16 port, const QString& user, bool doRegister);
     void sendDm(const QString& to, const QString& text);
+
 
 signals:
     void connected();
@@ -26,6 +27,9 @@ private slots:
 private:
     void sendFrame(const QByteArray& payload);
     void processFrame(const QByteArray& payload);
+
+    bool m_doRegister = false;
+    bool m_loggedIn = false;
 
     QTcpSocket m_sock;
     QByteArray m_buf;

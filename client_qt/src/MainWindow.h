@@ -5,6 +5,7 @@
 class QLineEdit;
 class QPushButton;
 class QTextEdit;
+class QCheckBox;
 
 class NetClient;
 
@@ -32,6 +33,7 @@ private:
     QLineEdit* m_port;
     QLineEdit* m_user;
     QPushButton* m_connectBtn;
+    QCheckBox* m_register;
 
     QTextEdit* m_log;
 

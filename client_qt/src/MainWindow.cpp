@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QLabel>
+#include <QCheckBox>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
@@ -20,6 +21,7 @@ MainWindow::MainWindow(QWidget* parent)
     m_host = new QLineEdit("127.0.0.1");
     m_port = new QLineEdit("5555");
     m_user = new QLineEdit("alice");
+    m_register = new QCheckBox("Register");
     m_connectBtn = new QPushButton("Connect");
 
     connRow->addWidget(new QLabel("Host:"));
@@ -28,6 +30,7 @@ MainWindow::MainWindow(QWidget* parent)
     connRow->addWidget(m_port);
     connRow->addWidget(new QLabel("User:"));
     connRow->addWidget(m_user);
+    connRow->addWidget(m_register);
     connRow->addWidget(m_connectBtn);
     root->addLayout(connRow);
 
@@ -75,7 +78,7 @@ void MainWindow::onConnectClicked() {
     const QString user = m_user->text().trimmed();
 
     m_log->append(QString("Connecting to %1:%2 as %3...").arg(host).arg(port).arg(user));
-    m_net->connectTo(host, port, user);
+    m_net->connectTo(host, port, user, m_register->isChecked());
 }
 
 void MainWindow::onSendClicked() {
