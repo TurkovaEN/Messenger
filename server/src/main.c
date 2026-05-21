@@ -14,6 +14,10 @@
 #define MAX_USER    32
 #define MAX_PAYLOAD 2048
 
+#define MAX_ROOMS 32
+#define MAX_ROOM_NAME 32
+#define MAX_ROOM_MEMBERS 64
+
 static volatile sig_atomic_t g_stop = 0;
 
 static void on_signal(int sig) {
@@ -26,6 +30,13 @@ typedef struct Client {
     int   used;
     char  user[MAX_USER];
 } Client;
+
+typedef struct Room {
+ int used;
+ char name[MAX_ROOM_NAME];
+ int members[MAX_ROOM_MEMBERS]; // indexes in clients[]
+ int member_count;
+} Room;
 
 static void usage(const char* prog) {
     fprintf(stderr, "Usage: %s <port> <log_path>\n", prog);
@@ -63,7 +74,65 @@ static int find_by_user(Client* clients, const char* user) {
     return -1;
 }
 
-static int handle_frame(Client* clients, Client* c, const char* payload) {
+static int find_room(Room* rooms, const char* name) {
+ if (!name || !name[0]) return -1;
+ for (int i = 0; i < MAX_ROOMS; i++) {
+  if (rooms[i].used && strcmp(rooms[i].name, name) == 0) return i;
+ }
+ return -1;
+}
+
+static int add_room(Room* rooms, const char* name) {
+ if (!name || !name[0]) return -1;
+ if (find_room(rooms, name) >= 0) return -2; // already exists
+ for (int i = 0; i < MAX_ROOMS; i++) {
+  if (!rooms[i].used) {
+   rooms[i].used = 1;
+   strncpy(rooms[i].name, name, sizeof(rooms[i].name) - 1);
+   rooms[i].name[sizeof(rooms[i].name) - 1] = '\0';
+   rooms[i].member_count = 0;
+   return i;
+  }
+ }
+ return -1; // no slots
+}
+
+static int room_has_member(const Room* r, int client_idx) {
+ for (int i = 0; i < r->member_count; i++) {
+  if (r->members[i] == client_idx) return 1;
+ }
+ return 0;
+}
+
+static int room_add_member(Room* r, int client_idx) {
+ if (r->member_count >= MAX_ROOM_MEMBERS) return -1;
+ if (room_has_member(r, client_idx)) return 0;
+ r->members[r->member_count++] = client_idx;
+ return 0;
+}
+
+static void room_remove_member(Room* r, int client_idx) {
+ for (int i = 0; i < r->member_count; i++) {
+  if (r->members[i] == client_idx) {
+   r->members[i] = r->members[r->member_count - 1];
+   r->member_count--;
+   return;
+  }
+ }
+}
+
+static void room_broadcast(Room* r, Client* clients, const char* msg, int skip_idx) {
+ for (int i = 0; i < r->member_count; i++) {
+  int idx = r->members[i];
+  if (idx == skip_idx) continue;
+  if (!clients[idx].used) continue;
+  if (send_frame(clients[idx].sock, msg, (uint32_t)strlen(msg)) != 0) {
+   // ignore errors here; disconnects will be handled by main loop
+  }
+ }
+}
+
+static int handle_frame(Client* clients, Room* rooms, int client_idx, Client* c, const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
         return 0;
@@ -130,6 +199,131 @@ log_info("MSG from=%s to=%s failed: offline", c->user, to);
 log_info("MSG from=%s to=%s text=%s", c->user, to, text);
     return 0;
 }
+ if (strcmp(type, "room_create") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char room[MAX_ROOM_NAME];
+  if (!kv_get(payload, "room", room, sizeof(room))) {
+   const char* err = "type=error;text=missing room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  int ar = add_room(rooms, room);
+  if (ar == -2) {
+   const char* err = "type=error;text=room already exists";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (ar < 0) {
+   const char* err = "type=error;text=cannot create room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char info[128];
+  snprintf(info, sizeof(info), "type=info;text=room created (%s)", room);
+  send_frame(c->sock, info, (uint32_t)strlen(info));
+  log_info("ROOM create user=%s room=%s", c->user, room);
+  return 0;
+ }
+
+ if (strcmp(type, "room_join") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char room[MAX_ROOM_NAME];
+  if (!kv_get(payload, "room", room, sizeof(room))) {
+   const char* err = "type=error;text=missing room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  int ri = find_room(rooms, room);
+  if (ri < 0) {
+   const char* err = "type=error;text=no such room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (room_add_member(&rooms[ri], client_idx) != 0) {
+   const char* err = "type=error;text=room is full";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char info[128];
+  snprintf(info, sizeof(info), "type=info;text=joined room (%s)", room);
+  send_frame(c->sock, info, (uint32_t)strlen(info));
+  log_info("ROOM join user=%s room=%s", c->user, room);
+  return 0;
+ }
+
+ if (strcmp(type, "room_leave") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char room[MAX_ROOM_NAME];
+  if (!kv_get(payload, "room", room, sizeof(room))) {
+   const char* err = "type=error;text=missing room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  int ri = find_room(rooms, room);
+  if (ri < 0) {
+   const char* err = "type=error;text=no such room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  room_remove_member(&rooms[ri], client_idx);
+  char info[128];
+  snprintf(info, sizeof(info), "type=info;text=left room (%s)", room);
+  send_frame(c->sock, info, (uint32_t)strlen(info));
+  log_info("ROOM leave user=%s room=%s", c->user, room);
+  return 0;
+ }
+
+ if (strcmp(type, "room_msg") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  char room[MAX_ROOM_NAME];
+  char text[1024];
+  if (!kv_get(payload, "room", room, sizeof(room))) {
+   const char* err = "type=error;text=missing room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (!kv_get(payload, "text", text, sizeof(text))) {
+   const char* err = "type=error;text=missing text";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  int ri = find_room(rooms, room);
+  if (ri < 0) {
+   const char* err = "type=error;text=no such room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (!room_has_member(&rooms[ri], client_idx)) {
+   const char* err = "type=error;text=not in room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+
+  char out[MAX_PAYLOAD];
+  snprintf(out, sizeof(out), "type=room_deliver;room=%s;from=%s;text=%s", room, c->user, text);
+  room_broadcast(&rooms[ri], clients, out, -1);
+
+  const char* ok = "type=info;text=room message sent";
+  send_frame(c->sock, ok, (uint32_t)strlen(ok));
+  log_info("ROOM msg from=%s room=%s text=%s", c->user, room, text);
+  return 0;
+ }
 
     // for now: unknown types
     const char* info = "type=info;text=unknown command";
@@ -197,6 +391,9 @@ signal(SIGTERM, on_signal);
     memset(clients, 0, sizeof(clients));
     for (int i = 0; i < MAX_CLIENTS; i++) clients[i].sock = SOCK_INVALID;
 
+    Room rooms[MAX_ROOMS];
+memset(rooms, 0, sizeof(rooms));
+
 while (!g_stop) {
     fd_set rfds;
     FD_ZERO(&rfds);
@@ -252,12 +449,15 @@ while (!g_stop) {
                    clients[i].user[0] ? clients[i].user : "<none>");
             log_info("Client disconnected (slot=%d, user=%s)", i,
                      clients[i].user[0] ? clients[i].user : "<none>");
+            for (int r = 0; r < MAX_ROOMS; r++) {
+ if (rooms[r].used) room_remove_member(&rooms[r], i);
+}
             remove_client(clients, i);
             continue;
         }
 
         payload[n] = '\0';
-        handle_frame(clients, &clients[i], payload);
+        handle_frame(clients, rooms, i, &clients[i], payload);
     }
 }
 for (int i = 0; i < MAX_CLIENTS; i++) {
