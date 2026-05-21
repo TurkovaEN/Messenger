@@ -188,6 +188,57 @@ static void history_append_line(const char* path, const char* line) {
  fprintf(f, "%s\n", line);
  fclose(f);
 }
+static int history_send_last_lines(sock_t s, const char* chat, const char* path, int limit) {
+ if (limit <= 0) limit = 20;
+ if (limit > 200) limit = 200;
+
+ FILE* f = fopen(path, "r");
+ if (!f) {
+  const char* end = "type=history_end";
+  send_frame(s, end, (uint32_t)strlen(end));
+  return 0;
+ }
+
+ // Read all lines into a ring buffer (simple and OK for small history)
+ char** lines = (char**)calloc((size_t)limit, sizeof(char*));
+ if (!lines) { fclose(f); return -1; }
+
+ int count = 0;
+ int pos = 0;
+
+ char buf[1600];
+ while (fgets(buf, sizeof(buf), f)) {
+  size_t n = strlen(buf);
+  while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r')) { buf[n-1] = '\0'; n--; }
+
+  free(lines[pos]);
+  lines[pos] = strdup(buf);
+  if (!lines[pos]) { /* ignore OOM for this line */ }
+
+  pos = (pos + 1) % limit;
+  if (count < limit) count++;
+ }
+
+ fclose(f);
+
+ // Send in correct order: oldest -> newest
+ int start = (count == limit) ? pos : 0;
+ for (int i = 0; i < count; i++) {
+  int idx = (start + i) % limit;
+  if (!lines[idx]) continue;
+
+  char out[2048];
+  snprintf(out, sizeof(out), "type=history_item;chat=%s;line=%s", chat, lines[idx]);
+  send_frame(s, out, (uint32_t)strlen(out));
+ }
+
+ for (int i = 0; i < limit; i++) free(lines[i]);
+ free(lines);
+
+ const char* end = "type=history_end";
+ send_frame(s, end, (uint32_t)strlen(end));
+ return 0;
+}
 
 static int handle_frame(Client* clients, Room* rooms, const char* users_path, int client_idx, Client* c, const char* payload) {
     char type[32];
@@ -263,6 +314,56 @@ log_info("Login user=%s", c->user);
   char out[1200];
   snprintf(out, sizeof(out), "type=users;list=%s", list);
   send_frame(c->sock, out, (uint32_t)strlen(out));
+  return 0;
+ }
+
+  if (strcmp(type, "history_dm") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+
+  char peer[MAX_USER];
+  char limit_s[32] = {0};
+  int limit = 20;
+
+  if (!kv_get(payload, "peer", peer, sizeof(peer))) {
+   const char* err = "type=error;text=missing peer";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (kv_get(payload, "limit", limit_s, sizeof(limit_s))) limit = atoi(limit_s);
+
+  char path[256];
+  history_path_dm(path, sizeof(path), c->user, peer);
+  history_send_last_lines(c->sock, "dm", path, limit);
+  log_info("HISTORY dm user=%s peer=%s limit=%d", c->user, peer, limit);
+  return 0;
+ }
+
+ if (strcmp(type, "history_room") == 0) {
+  if (!c->user[0]) {
+   const char* err = "type=error;text=not logged in";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+
+  char room[MAX_ROOM_NAME];
+  char limit_s[32] = {0};
+  int limit = 20;
+
+  if (!kv_get(payload, "room", room, sizeof(room))) {
+   const char* err = "type=error;text=missing room";
+   send_frame(c->sock, err, (uint32_t)strlen(err));
+   return 0;
+  }
+  if (kv_get(payload, "limit", limit_s, sizeof(limit_s))) limit = atoi(limit_s);
+
+  char path[256];
+  history_path_room(path, sizeof(path), room);
+  history_send_last_lines(c->sock, "room", path, limit);
+  log_info("HISTORY room user=%s room=%s limit=%d", c->user, room, limit);
   return 0;
  }
 
