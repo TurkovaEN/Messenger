@@ -10,6 +10,8 @@
 
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
+#include "../../common/urlcodec.h"
+
 
 #ifdef _WIN32
   #include <windows.h>
@@ -214,7 +216,12 @@ printf(" /history_room <room>\n");
             }
 
             char out[2048];
-            snprintf(out, sizeof(out), "type=msg;to=%s;text=%s", to, text);
+            char text_enc[1400];
+if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
+ printf("[error] message too long\n");
+ continue;
+}
+snprintf(out, sizeof(out), "type=msg;to=%s;text=%s", to, text_enc);
             if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
                 printf("[error] send failed\n");
                 ctx.running = 0;
@@ -227,7 +234,12 @@ if (strncmp(line, "/create ", 8) == 0) {
   while (*room == ' ') room++;
   if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
   char out[512];
-  snprintf(out, sizeof(out), "type=room_create;room=%s", room);
+  char text_enc[1400];
+if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
+ printf("[error] message too long\n");
+ continue;
+}
+snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text_enc);
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
