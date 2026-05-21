@@ -56,13 +56,20 @@ static void print_incoming(const char* payload) {
   return;
  }
   if (strcmp(type, "history_item") == 0) {
-  char chat[32] = {0};
-  char line[1600] = {0};
-  kv_get(payload, "chat", chat, sizeof(chat));
-  kv_get(payload, "line", line, sizeof(line));
-  printf("[history %s] %s\n", chat[0] ? chat : "?", line);
-  return;
+ char chat[32] = {0};
+ char line_enc[1600] = {0};
+ char line[1600] = {0};
+
+ kv_get(payload, "chat", chat, sizeof(chat));
+ kv_get(payload, "line", line_enc, sizeof(line_enc));
+
+ if (url_decode(line_enc, line, sizeof(line)) != 0) {
+  snprintf(line, sizeof(line), "<bad encoding>");
  }
+
+ printf("[history %s] %s\n", chat[0] ? chat : "?", line);
+ return;
+}
 
  if (strcmp(type, "history_end") == 0) {
   printf("[history] end\n");
@@ -73,21 +80,38 @@ static void print_incoming(const char* payload) {
     }
 
     if (strcmp(type, "deliver") == 0) {
-        char from[64] = {0}, text[1024] = {0};
-        kv_get(payload, "from", from, sizeof(from));
-        kv_get(payload, "text", text, sizeof(text));
-        printf("%s: %s\n", from[0] ? from : "?", text);
-        return;
-    }
+ char from[64] = {0};
+ char text_enc[1024] = {0};
+ char text[1024] = {0};
+
+ kv_get(payload, "from", from, sizeof(from));
+ kv_get(payload, "text", text_enc, sizeof(text_enc));
+
+ if (url_decode(text_enc, text, sizeof(text)) != 0) {
+  snprintf(text, sizeof(text), "<bad encoding>");
+ }
+
+ printf("%s: %s\n", from[0] ? from : "?", text);
+ return;
+}
 
  if (strcmp(type, "room_deliver") == 0) {
-  char room[64] = {0}, from[64] = {0}, text[1024] = {0};
-  kv_get(payload, "room", room, sizeof(room));
-  kv_get(payload, "from", from, sizeof(from));
-  kv_get(payload, "text", text, sizeof(text));
-  printf("[%s] %s: %s\n", room[0] ? room : "room", from[0] ? from : "?", text);
-  return;
+ char room[64] = {0};
+ char from[64] = {0};
+ char text_enc[1024] = {0};
+ char text[1024] = {0};
+
+ kv_get(payload, "room", room, sizeof(room));
+ kv_get(payload, "from", from, sizeof(from));
+ kv_get(payload, "text", text_enc, sizeof(text_enc));
+
+ if (url_decode(text_enc, text, sizeof(text)) != 0) {
+  snprintf(text, sizeof(text), "<bad encoding>");
  }
+
+ printf("[%s] %s: %s\n", room[0] ? room : "room", from[0] ? from : "?", text);
+ return;
+}
     if (strcmp(type, "info") == 0 || strcmp(type, "error") == 0) {
         char text[1024] = {0};
         kv_get(payload, "text", text, sizeof(text));
@@ -196,50 +220,47 @@ printf(" /history_room <room>\n");
             break;
         }
 
-        if (strncmp(line, "/msg ", 5) == 0) {
-            char* p = line + 5;
-            while (*p == ' ') p++;
+ if (strncmp(line, "/msg ", 5) == 0) {
+  char* p = line + 5;
+  while (*p == ' ') p++;
+  char* to = p;
+  char* sp = strchr(to, ' ');
+  if (!sp) {
+   printf("[error] usage: /msg <user> <text>\n");
+   continue;
+  }
+  *sp = '\0';
+  char* text = sp + 1;
+  while (*text == ' ') text++;
 
-            char* to = p;
-            char* sp = strchr(to, ' ');
-            if (!sp) {
-                printf("[error] usage: /msg <user> <text>\n");
-                continue;
-            }
-            *sp = '\0';
-            char* text = sp + 1;
-            while (*text == ' ') text++;
+  if (!to[0] || !text[0]) {
+   printf("[error] usage: /msg <user> <text>\n");
+   continue;
+  }
 
-            if (!to[0] || !text[0]) {
-                printf("[error] usage: /msg <user> <text>\n");
-                continue;
-            }
+  char text_enc[1400];
+  if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
+   printf("[error] message too long\n");
+   continue;
+  }
 
-            char out[2048];
-            char text_enc[1400];
-if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
- printf("[error] message too long\n");
- continue;
-}
-snprintf(out, sizeof(out), "type=msg;to=%s;text=%s", to, text_enc);
-            if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
-                printf("[error] send failed\n");
-                ctx.running = 0;
-                break;
-            }
-            continue;
-        }
-if (strncmp(line, "/create ", 8) == 0) {
+  char out[2048];
+  snprintf(out, sizeof(out), "type=msg;to=%s;text=%s", to, text_enc);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+ if (strncmp(line, "/create ", 8) == 0) {
   char* room = line + 8;
   while (*room == ' ') room++;
   if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
-  char out[512];
-  char text_enc[1400];
-if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
- printf("[error] message too long\n");
- continue;
-}
-snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text_enc);
+
+  char out[256];
+  snprintf(out, sizeof(out), "type=room_create;room=%s", room);
+
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
@@ -285,10 +306,16 @@ snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text_enc);
   *sp = '\0';
   char* text = sp + 1;
   while (*text == ' ') text++;
-  if (!validate_room_name(room) || !text[0]) { printf("[error] usage: /room <room> <text>\n"); continue; }
+  if (!room[0] || !text[0]) { printf("[error] usage: /room <room> <text>\n"); continue; }
+
+  char text_enc[1400];
+  if (url_encode(text, text_enc, sizeof(text_enc)) != 0) {
+   printf("[error] message too long\n");
+   continue;
+  }
 
   char out[2048];
-  snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text);
+  snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text_enc);
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
