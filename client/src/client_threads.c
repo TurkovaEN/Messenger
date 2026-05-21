@@ -53,6 +53,19 @@ static void print_incoming(const char* payload) {
   printf("[users] %s\n", list[0] ? list : "<empty>");
   return;
  }
+  if (strcmp(type, "history_item") == 0) {
+  char chat[32] = {0};
+  char line[1600] = {0};
+  kv_get(payload, "chat", chat, sizeof(chat));
+  kv_get(payload, "line", line, sizeof(line));
+  printf("[history %s] %s\n", chat[0] ? chat : "?", line);
+  return;
+ }
+
+ if (strcmp(type, "history_end") == 0) {
+  printf("[history] end\n");
+  return;
+ }
         printf("[server] %s\n", payload);
         return;
     }
@@ -165,6 +178,8 @@ ctx.main_thread = pthread_self();
  printf(" /leave <room>\n");
  printf(" /room <room> <text>\n");
  printf(" /users\n");
+ printf(" /history <user>\n");
+printf(" /history_room <room>\n");
  printf(" /quit\n");
 
     char line[1400];
@@ -271,6 +286,33 @@ if (strncmp(line, "/create ", 8) == 0) {
  }
   if (strcmp(line, "/users") == 0) {
   const char* out = "type=users";
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+  if (strncmp(line, "/history_room ", 14) == 0) {
+  char* room = line + 14;
+  while (*room == ' ') room++;
+  if (!room[0]) { printf("[error] usage: /history_room <room>\n"); continue; }
+  char out[512];
+  snprintf(out, sizeof(out), "type=history_room;room=%s;limit=20", room);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+
+ if (strncmp(line, "/history ", 9) == 0) {
+  char* peer = line + 9;
+  while (*peer == ' ') peer++;
+  if (!peer[0]) { printf("[error] usage: /history <user>\n"); continue; }
+  char out[512];
+  snprintf(out, sizeof(out), "type=history_dm;peer=%s;limit=20", peer);
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
