@@ -30,6 +30,12 @@ static void trim_newline(char* s) {
         n--;
     }
 }
+static int validate_room_name(const char* room) {
+ if (!room || !room[0]) return 0;
+ // keep consistent with server MAX_ROOM_NAME (32 incl '\0')
+ if (strlen(room) >= 32) return 0;
+ return 1;
+}
 
 static void print_incoming(const char* payload) {
     char type[32];
@@ -46,6 +52,14 @@ static void print_incoming(const char* payload) {
         return;
     }
 
+ if (strcmp(type, "room_deliver") == 0) {
+  char room[64] = {0}, from[64] = {0}, text[1024] = {0};
+  kv_get(payload, "room", room, sizeof(room));
+  kv_get(payload, "from", from, sizeof(from));
+  kv_get(payload, "text", text, sizeof(text));
+  printf("[%s] %s: %s\n", room[0] ? room : "room", from[0] ? from : "?", text);
+  return;
+ }
     if (strcmp(type, "info") == 0 || strcmp(type, "error") == 0) {
         char text[1024] = {0};
         kv_get(payload, "text", text, sizeof(text));
@@ -121,8 +135,12 @@ int run_client(sock_t s, const char* username) {
     }
 
     printf("Commands:\n");
-    printf("  /msg <user> <text>\n");
-    printf("  /quit\n");
+ printf(" /msg <user> <text>\n");
+ printf(" /create <room>\n");
+ printf(" /join <room>\n");
+ printf(" /leave <room>\n");
+ printf(" /room <room> <text>\n");
+ printf(" /quit\n");
 
     char line[1400];
     while (ctx.running) {
@@ -164,7 +182,68 @@ int run_client(sock_t s, const char* username) {
             }
             continue;
         }
+if (strncmp(line, "/create ", 8) == 0) {
+  char* room = line + 8;
+  while (*room == ' ') room++;
+  if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
+  char out[512];
+  snprintf(out, sizeof(out), "type=room_create;room=%s", room);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
 
+ if (strncmp(line, "/join ", 6) == 0) {
+  char* room = line + 6;
+  while (*room == ' ') room++;
+  if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
+  char out[512];
+  snprintf(out, sizeof(out), "type=room_join;room=%s", room);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+
+ if (strncmp(line, "/leave ", 7) == 0) {
+  char* room = line + 7;
+  while (*room == ' ') room++;
+  if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
+  char out[512];
+  snprintf(out, sizeof(out), "type=room_leave;room=%s", room);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
+
+ if (strncmp(line, "/room ", 6) == 0) {
+  char* p = line + 6;
+  while (*p == ' ') p++;
+  char* room = p;
+  char* sp = strchr(room, ' ');
+  if (!sp) { printf("[error] usage: /room <room> <text>\n"); continue; }
+  *sp = '\0';
+  char* text = sp + 1;
+  while (*text == ' ') text++;
+  if (!validate_room_name(room) || !text[0]) { printf("[error] usage: /room <room> <text>\n"); continue; }
+
+  char out[2048];
+  snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text);
+  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+   printf("[error] send failed\n");
+   ctx.running = 0;
+   break;
+  }
+  continue;
+ }
         printf("[error] unknown command\n");
     }
 
