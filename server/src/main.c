@@ -321,6 +321,24 @@ log_info("Login user=%s", c->user);
   return 0;
  }
 
+  if (strcmp(type, "rooms") == 0) {
+  char list[1024];
+  list[0] = '\0';
+
+  for (int r = 0; r < MAX_ROOMS; r++) {
+   if (!rooms[r].used) continue;
+   if (!rooms[r].name[0]) continue;
+
+   if (list[0]) strncat(list, ",", sizeof(list) - strlen(list) - 1);
+   strncat(list, rooms[r].name, sizeof(list) - strlen(list) - 1);
+  }
+
+  char out[1200];
+  snprintf(out, sizeof(out), "type=rooms;list=%s", list);
+  send_frame(c->sock, out, (uint32_t)strlen(out));
+  return 0;
+ }
+
   if (strcmp(type, "history_dm") == 0) {
   if (!c->user[0]) {
    const char* err = "type=error;text=not logged in";
