@@ -12,6 +12,7 @@
 #include <QCheckBox>
 #include <QInputDialog>
 
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
       m_net(new NetClient(this))
@@ -163,6 +164,16 @@ void MainWindow::onJoinRoomClicked() {
 void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!item) return;
     m_currentChat = item->text();
+
+    if (m_currentChat.startsWith("#")) {
+        QString room = m_currentChat.mid(1);
+        if (!m_joinedRooms.contains(room)) {
+            m_log->append(QString("[ui] joining #%1 ...").arg(room));
+            m_net->joinRoom(room);
+            m_joinedRooms.insert(room);
+        }
+    }
+
     redrawCurrentChat();
 }
 

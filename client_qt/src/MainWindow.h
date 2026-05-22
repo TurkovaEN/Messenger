@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QMap>
 #include <QStringList>
+#include <QSet>
 
 class QLineEdit;
 class QPushButton;
@@ -57,4 +58,5 @@ QPushButton* m_joinRoomBtn;
 QString m_currentChat; // "@bob" or "#room1"
 QMap<QString, QStringList> m_chatLog;
 void redrawCurrentChat();
+QSet<QString> m_joinedRooms; // stores room names without '#'
 };
