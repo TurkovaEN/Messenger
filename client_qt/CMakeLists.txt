@@ -16,6 +16,8 @@ add_executable(messenger_qt_client
     src/MainWindow.cpp
     src/NetClient.h
     src/NetClient.cpp
+    src/LoginDialog.h
+    src/LoginDialog.cpp
 )
 
 target_link_libraries(messenger_qt_client Qt5::Widgets Qt5::Network)

@@ -13,15 +13,15 @@
 #include <QInputDialog>
 
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(NetClient* net, QWidget* parent)
     : QMainWindow(parent),
-      m_net(new NetClient(this))
+      m_net(net)
 {
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout();
 
     // Connection row
-    auto* connRow = new QHBoxLayout();
+    /*auto* connRow = new QHBoxLayout();
     m_host = new QLineEdit("127.0.0.1");
     m_port = new QLineEdit("5555");
     m_user = new QLineEdit("alice");
@@ -36,7 +36,7 @@ MainWindow::MainWindow(QWidget* parent)
     connRow->addWidget(m_user);
     connRow->addWidget(m_register);
     connRow->addWidget(m_connectBtn);
-    root->addLayout(connRow);
+    root->addLayout(connRow);*/
 
     // Buttons row
     auto* btnRow = new QHBoxLayout();
@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget* parent)
     setCentralWidget(central);
 
     // UI connections
-    connect(m_connectBtn, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
+    //connect(m_connectBtn, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
     connect(m_sendBtn, &QPushButton::clicked, this, &MainWindow::onSendClicked);
     connect(m_refreshBtn, &QPushButton::clicked, this, &MainWindow::onRefreshClicked);
     connect(m_createRoomBtn, &QPushButton::clicked, this, &MainWindow::onCreateRoomClicked);
@@ -86,7 +86,7 @@ MainWindow::MainWindow(QWidget* parent)
 
 
     // NetClient connections
-    connect(m_net, &NetClient::connected, this, &MainWindow::onNetConnected);
+
     connect(m_net, &NetClient::disconnected, this, &MainWindow::onNetDisconnected);
     connect(m_net, &NetClient::error, this, &MainWindow::onNetError);
     connect(m_net, &NetClient::message, this, &MainWindow::onNetMessage);
@@ -126,7 +126,9 @@ connect(m_net, &NetClient::usersAllList, this, [this](const QStringList& users){
         }
     });
 
-    setUiEnabled(false);
+   // setUiEnabled(false);
+    setUiEnabled(true);
+onRefreshClicked();
 }
 
 MainWindow::~MainWindow() = default;
@@ -139,7 +141,7 @@ void MainWindow::setUiEnabled(bool connected) {
     m_text->setEnabled(connected);
     m_sendBtn->setEnabled(connected);
 }
-
+/*
 void MainWindow::onConnectClicked() {
     const QString host = m_host->text().trimmed();
     const quint16 port = (quint16)m_port->text().toUShort();
@@ -147,7 +149,7 @@ void MainWindow::onConnectClicked() {
 
     m_log->append(QString("Connecting to %1:%2 as %3...").arg(host).arg(port).arg(user));
     m_net->connectTo(host, port, user, m_register->isChecked());
-}
+}*/
 
 void MainWindow::onRefreshClicked() {
     m_net->requestUsersAll();
@@ -233,11 +235,7 @@ if (m_currentChat.startsWith("@")) {
     m_text->clear();
 }
 
-void MainWindow::onNetConnected() {
-    m_log->append("[net] login ok");
-    setUiEnabled(true);
-    onRefreshClicked();
-}
+
 
 void MainWindow::onNetDisconnected() {
     m_log->append("[net] disconnected");
