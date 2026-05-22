@@ -17,6 +17,24 @@ static QString kvGet(const QString& s, const QString& key) {
     return {};
 }
 
+static QString formatHistoryLine(const QString& raw, const QString& selfUser) {
+    // raw examples:
+    // "from=alice;to=bob;text=hello"
+    // "from=bob;to=alice;text=hi"
+    // "from=alice;room=room1;text=hey"
+    QString from = kvGet(raw, "from");
+    QString text = kvGet(raw, "text");
+
+    if (from.isEmpty() && text.isEmpty()) {
+        return raw;
+    }
+
+    QString name = from;
+    if (!selfUser.isEmpty() && from == selfUser) name = "me";
+
+    return QString("%1: %2").arg(name, text);
+}
+
 static QByteArray urlEncode(const QByteArray& in) {
     static const char* H = "0123456789ABCDEF";
     QByteArray out;
@@ -197,7 +215,6 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         QStringList items = list.split(",", Qt::SkipEmptyParts);
         for (QString& s : items) s = s.trimmed();
         emit usersList(items);
-        emit message(QString("[users] %1").arg(list));
         return;
     }
     if (type == "users_all") {
@@ -205,7 +222,6 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         QStringList items = list.split(",", Qt::SkipEmptyParts);
         for (QString& s : items) s = s.trimmed();
         emit usersAllList(items);
-        emit message(QString("[users_all] %1").arg(list));
         return;
     }
 
@@ -214,7 +230,6 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         QStringList items = list.split(",", Qt::SkipEmptyParts);
         for (QString& s : items) s = s.trimmed();
         emit roomsList(items);
-        emit message(QString("[rooms] %1").arg(list));
         return;
     }
 
@@ -231,7 +246,9 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
             return;
         }
 
-        emit historyItem(key, QString::fromUtf8(line));
+        QString rawLine = QString::fromUtf8(line);
+QString pretty = formatHistoryLine(rawLine, m_user);
+emit historyItem(key, pretty);
         return;
     }
 
