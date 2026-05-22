@@ -59,6 +59,7 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     m_refreshBtn = new QPushButton("Refresh");
     m_createRoomBtn = new QPushButton("Create room");
     m_joinRoomBtn = new QPushButton("Join room");
+    m_joinRoomBtn->hide();
     btnRow->addWidget(m_refreshBtn);
     btnRow->addWidget(m_createRoomBtn);
     btnRow->addWidget(m_joinRoomBtn);
@@ -130,17 +131,29 @@ connect(m_net, &NetClient::usersAllList, this, [this](const QStringList& users){
 });
 
     connect(m_net, &NetClient::roomsList, this, [this](const QStringList& rooms){
-        // remove old # items
-        for (int i = m_chats->count() - 1; i >= 0; --i) {
-            if (m_chats->item(i)->text().startsWith("#"))
-                delete m_chats->takeItem(i);
-        }
-        for (const QString& r : rooms) {
-            QString rr = r.trimmed();
-            if (rr.isEmpty()) continue;
-            m_chats->addItem("#" + rr);
-        }
-    });
+    // remove old # items
+    for (int i = m_chats->count() - 1; i >= 0; --i) {
+        if (m_chats->item(i)->text().startsWith("#"))
+            delete m_chats->takeItem(i);
+    }
+
+    const QIcon joinedIcon = makeCircleIcon(QColor(70, 130, 255)); // blue
+    const QIcon notJoinedIcon = makeCircleIcon(QColor(150, 150, 150)); // gray
+
+    for (const QString& r : rooms) {
+        QString rr = r.trimmed();
+        if (rr.isEmpty()) continue;
+
+        auto* item = new QListWidgetItem();
+        item->setText("#" + rr);
+        item->setData(Qt::UserRole, "#" + rr);
+
+        if (m_joinedRooms.contains(rr)) item->setIcon(joinedIcon);
+        else item->setIcon(notJoinedIcon);
+
+        m_chats->addItem(item);
+    }
+});
 
    // setUiEnabled(false);
     setUiEnabled(true);
@@ -205,6 +218,7 @@ else m_currentChat = item->text();
             m_log->append(QString("[ui] joining #%1 ...").arg(room));
             m_net->joinRoom(room);
             m_joinedRooms.insert(room);
+            onRefreshClicked();
         }
     }
     // load history for selected chat
