@@ -235,7 +235,9 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
 
     if (type == "info" || type == "error") {
         QString text = kvGet(payload, "text");
-
+ if (type == "info" && text == "delivered") {
+        return;
+    }
         if (type == "info") {
             if (!m_loggedIn && text.startsWith("login ok")) {
                 m_loggedIn = true;

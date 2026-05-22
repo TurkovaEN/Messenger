@@ -53,7 +53,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* mainRow = new QHBoxLayout();
 
     m_chats = new QListWidget();
-    m_chats->setMinimumWidth(220);
+    m_chats->setMinimumWidth(160);
     mainRow->addWidget(m_chats);
 
     auto* rightCol = new QVBoxLayout();
