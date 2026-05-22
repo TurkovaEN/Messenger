@@ -115,6 +115,9 @@ static void print_incoming(const char* payload) {
     if (strcmp(type, "info") == 0 || strcmp(type, "error") == 0) {
         char text[1024] = {0};
         kv_get(payload, "text", text, sizeof(text));
+         if (strcmp(type, "info") == 0 && strcmp(text, "delivered") == 0) {
+  return;
+ }
         printf("[%s] %s\n", type, text[0] ? text : payload);
         return;
     }
