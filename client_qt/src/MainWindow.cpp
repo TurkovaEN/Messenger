@@ -245,7 +245,7 @@ void MainWindow::onSendClicked() {
     const QString text = m_text->text();
     if (text.isEmpty()) return;
 
-    QString myLine = QString("me: %1").arg(text);
+    QString myLine = QString("me: %1  ✓").arg(text);
 
 if (m_currentChat.startsWith("@")) {
     QString to = m_currentChat.mid(1);
