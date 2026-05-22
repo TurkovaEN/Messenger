@@ -133,6 +133,34 @@ static void room_broadcast(Room* r, Client* clients, const char* msg, int skip_i
  }
 }
 
+static int rooms_load(Room* rooms, const char* path) {
+ if (!path || !path[0]) return -1;
+
+ FILE* f = fopen(path, "r");
+ if (!f) return -1;
+
+ char line[128];
+ while (fgets(line, sizeof(line), f)) {
+  size_t n = strlen(line);
+  while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) { line[n-1] = '\0'; n--; }
+  if (line[0] == '\0') continue;
+
+  // ignore errors if full or duplicate
+  add_room(rooms, line);
+ }
+ fclose(f);
+ return 0;
+}
+
+static int rooms_append(const char* path, const char* room) {
+ if (!path || !path[0] || !room || !room[0]) return -1;
+ FILE* f = fopen(path, "a");
+ if (!f) return -1;
+ fprintf(f, "%s\n", room);
+ fclose(f);
+ return 0;
+}
+
 static int users_ensure_file(const char* path) {
  FILE* f = fopen(path, "a");
  if (!f) return -1;
@@ -244,7 +272,7 @@ send_frame(s, out, (uint32_t)strlen(out));
  return 0;
 }
 
-static int handle_frame(Client* clients, Room* rooms, const char* users_path, int client_idx, Client* c, const char* payload) {
+static int handle_frame(Client* clients, Room* rooms, const char* users_path, const char* rooms_path, int client_idx, Client* c, const char* payload) {
     char type[32];
     if (!kv_get(payload, "type", type, sizeof(type))) {
         return 0;
@@ -473,6 +501,9 @@ char hpath[256];
    send_frame(c->sock, err, (uint32_t)strlen(err));
    return 0;
   }
+  // persist room name
+rooms_append(rooms_path, room);
+
   char info[128];
   snprintf(info, sizeof(info), "type=info;text=room created (%s)", room);
   send_frame(c->sock, info, (uint32_t)strlen(info));
@@ -605,6 +636,7 @@ int main(int argc, char** argv) {
  int port = atoi(argv[1]);
  const char* log_path = argv[2];
  const char* users_path = (argc == 4) ? argv[3] : "server/data/users.txt";
+ const char* rooms_path = "server/data/rooms.txt";
     if (port <= 0 || port > 65535) { fprintf(stderr, "Bad port\n"); return 1; }
 
     if (net_init() != 0) {
@@ -673,6 +705,16 @@ signal(SIGTERM, on_signal);
     Room rooms[MAX_ROOMS];
 memset(rooms, 0, sizeof(rooms));
 
+// Load rooms from file (persistent rooms)
+if (rooms_load(rooms, rooms_path) == 0) {
+ log_info("Rooms loaded from %s", rooms_path);
+} else {
+ log_info("Rooms file not loaded (will create on demand): %s", rooms_path);
+ // ensure file exists
+ FILE* rf = fopen(rooms_path, "a");
+ if (rf) fclose(rf);
+}
+
 while (!g_stop) {
     fd_set rfds;
     FD_ZERO(&rfds);
@@ -736,7 +778,7 @@ while (!g_stop) {
         }
 
         payload[n] = '\0';
-        handle_frame(clients, rooms, users_path, i, &clients[i], payload);
+       handle_frame(clients, rooms, users_path, rooms_path, i, &clients[i], payload);
     }
 }
 
