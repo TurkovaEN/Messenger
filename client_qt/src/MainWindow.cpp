@@ -54,7 +54,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     m_chats = new QListWidget();
     m_chats->setMinimumWidth(100);
-    mainRow->addWidget(m_chats);
+    mainRow->addWidget(m_chats, 0);
 
     auto* rightCol = new QVBoxLayout();
 
@@ -70,7 +70,7 @@ MainWindow::MainWindow(QWidget* parent)
     sendRow->addWidget(m_sendBtn);
     rightCol->addLayout(sendRow);
 
-    mainRow->addLayout(rightCol);
+    mainRow->addLayout(rightCol, 1);
     root->addLayout(mainRow);
 
     central->setLayout(root);
