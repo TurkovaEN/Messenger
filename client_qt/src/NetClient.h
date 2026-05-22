@@ -20,19 +20,23 @@ public:
     void sendDm(const QString& to, const QString& text);
     void sendRoom(const QString& room, const QString& text);
 
+    void requestHistoryDm(const QString& peer, int limit);
+    void requestHistoryRoom(const QString& room, int limit);
+
 signals:
     void connected();      // emitted after "login ok"
     void disconnected();
     void error(const QString& msg);
 
-    // debug / service messages
     void message(const QString& msg);
 
-    // chat-scoped messages: chatKey is "@bob" or "#room1"
     void messageForChat(const QString& chatKey, const QString& line);
 
     void usersList(const QStringList& users);
     void roomsList(const QStringList& rooms);
+
+    void historyItem(const QString& chatKey, const QString& line);
+    void historyEnd(const QString& chatKey);
 
 private slots:
     void onConnected();
@@ -50,4 +54,7 @@ private:
     QString m_user;
     bool m_doRegister = false;
     bool m_loggedIn = false;
+
+    // which chat history is currently being loaded ("@bob" or "#room")
+    QString m_historyChatKey;
 };

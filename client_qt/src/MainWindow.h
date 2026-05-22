@@ -33,9 +33,12 @@ void onCreateRoomClicked();
 void onJoinRoomClicked();
 void onChatSelected(QListWidgetItem* item);
 void onChatMessage(const QString& chatKey, const QString& line);
+void onHistoryItem(const QString& chatKey, const QString& line);
+void onHistoryEnd(const QString& chatKey);
 
 private:
     void setUiEnabled(bool connected);
+    bool m_loadingHistory = false;
 
     NetClient* m_net;
 

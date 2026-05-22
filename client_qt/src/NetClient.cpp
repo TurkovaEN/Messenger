@@ -111,6 +111,18 @@ void NetClient::sendRoom(const QString& room, const QString& text) {
     sendFrame(payload);
 }
 
+void NetClient::requestHistoryDm(const QString& peer, int limit) {
+    m_historyChatKey = "@" + peer;
+    QByteArray payload = "type=history_dm;peer=" + peer.toUtf8() + ";limit=" + QByteArray::number(limit);
+    sendFrame(payload);
+}
+
+void NetClient::requestHistoryRoom(const QString& room, int limit) {
+    m_historyChatKey = "#" + room;
+    QByteArray payload = "type=history_room;room=" + room.toUtf8() + ";limit=" + QByteArray::number(limit);
+    sendFrame(payload);
+}
+
 void NetClient::sendFrame(const QByteArray& payload) {
     quint32 len = (quint32)payload.size();
     quint32 netLen = qToBigEndian(len);
@@ -192,6 +204,32 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         for (QString& s : items) s = s.trimmed();
         emit roomsList(items);
         emit message(QString("[rooms] %1").arg(list));
+        return;
+    }
+
+        if (type == "history_item") {
+        QString chat = kvGet(payload, "chat"); // "dm" or "room"
+        QByteArray lineEnc = kvGet(payload, "line").toUtf8();
+        QByteArray line = urlDecode(lineEnc);
+
+        // We route history to the last requested chatKey
+        QString key = m_historyChatKey;
+        if (key.isEmpty()) {
+            // fallback: show as debug
+            emit message(QString("[history %1] %2").arg(chat, QString::fromUtf8(line)));
+            return;
+        }
+
+        emit historyItem(key, QString::fromUtf8(line));
+        return;
+    }
+
+    if (type == "history_end") {
+        QString key = m_historyChatKey;
+        if (!key.isEmpty()) {
+            emit historyEnd(key);
+            m_historyChatKey.clear();
+        }
         return;
     }
 

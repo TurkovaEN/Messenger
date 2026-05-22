@@ -84,12 +84,15 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_joinRoomBtn, &QPushButton::clicked, this, &MainWindow::onJoinRoomClicked);
     connect(m_chats, &QListWidget::itemClicked, this, &MainWindow::onChatSelected);
 
+
     // NetClient connections
     connect(m_net, &NetClient::connected, this, &MainWindow::onNetConnected);
     connect(m_net, &NetClient::disconnected, this, &MainWindow::onNetDisconnected);
     connect(m_net, &NetClient::error, this, &MainWindow::onNetError);
     connect(m_net, &NetClient::message, this, &MainWindow::onNetMessage);
      connect(m_net, &NetClient::messageForChat, this, &MainWindow::onChatMessage);
+     connect(m_net, &NetClient::historyItem, this, &MainWindow::onHistoryItem);
+connect(m_net, &NetClient::historyEnd, this, &MainWindow::onHistoryEnd);
 
     // Fill chats list
     connect(m_net, &NetClient::usersList, this, [this](const QStringList& users){
@@ -173,8 +176,20 @@ void MainWindow::onChatSelected(QListWidgetItem* item) {
             m_joinedRooms.insert(room);
         }
     }
+    // load history for selected chat
+    m_loadingHistory = true;
+    m_chatLog[m_currentChat].clear();
+    m_log->clear();
+    m_log->append("[history] loading...");
 
-    redrawCurrentChat();
+    if (m_currentChat.startsWith("@")) {
+        QString peer = m_currentChat.mid(1);
+        m_net->requestHistoryDm(peer, 50);
+    } else if (m_currentChat.startsWith("#")) {
+        QString room = m_currentChat.mid(1);
+        m_net->requestHistoryRoom(room, 50);
+    }
+    return;
 }
 
 void MainWindow::onSendClicked() {
@@ -240,5 +255,28 @@ void MainWindow::onChatMessage(const QString& chatKey, const QString& line) {
     // if user is currently viewing this chat, update UI
     if (m_currentChat == chatKey) {
         m_log->append(line);
+    }
+}
+
+void MainWindow::onHistoryItem(const QString& chatKey, const QString& line) {
+    m_chatLog[chatKey].append(line);
+    if (m_currentChat == chatKey) {
+        // пока грузим, не перерисовываем каждый раз полностью
+        // просто добавляем строку
+        if (m_loadingHistory) {
+            if (m_log->toPlainText() == "[history] loading...") m_log->clear();
+        }
+        m_log->append(line);
+    }
+}
+
+void MainWindow::onHistoryEnd(const QString& chatKey) {
+    if (m_currentChat == chatKey) {
+        m_loadingHistory = false;
+        // если история пустая
+        if (m_chatLog[chatKey].isEmpty()) {
+            m_log->clear();
+            m_log->append("[history] empty");
+        }
     }
 }
