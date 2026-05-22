@@ -11,7 +11,23 @@
 #include <QListWidget>
 #include <QCheckBox>
 #include <QInputDialog>
+#include <QPainter>
+#include <QPixmap>
+#include <QIcon>
 
+static QIcon makeCircleIcon(const QColor& color) {
+    QPixmap pm(12, 12);
+    pm.fill(Qt::transparent);
+
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawEllipse(1, 1, 10, 10);
+    p.end();
+
+    return QIcon(pm);
+}
 
 MainWindow::MainWindow(NetClient* net, QWidget* parent)
     : QMainWindow(parent),
@@ -174,7 +190,9 @@ void MainWindow::onJoinRoomClicked() {
 
 void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!item) return;
-    m_currentChat = item->text();
+    QString key = item->data(Qt::UserRole).toString();
+if (!key.isEmpty()) m_currentChat = key;
+else m_currentChat = item->text();
 
     if (m_currentChat.startsWith("@")) {
     int sp = m_currentChat.indexOf(' ');
@@ -295,16 +313,26 @@ void MainWindow::onHistoryEnd(const QString& chatKey) {
 void MainWindow::redrawUsers() {
     // remove old @ items
     for (int i = m_chats->count() - 1; i >= 0; --i) {
-        if (m_chats->item(i)->text().startsWith("@"))
+        const QString t = m_chats->item(i)->text();
+        if (t.startsWith("@")) {
             delete m_chats->takeItem(i);
+        }
     }
+
+    const QIcon onlineIcon = makeCircleIcon(QColor(0, 200, 0));   // green
+    const QIcon offlineIcon = makeCircleIcon(QColor(150, 150, 150)); // gray
 
     QStringList all = QStringList(m_allUsers.begin(), m_allUsers.end());
     all.sort(Qt::CaseInsensitive);
 
     for (const QString& u : all) {
-        QString visible = "@" + u;
-        if (m_onlineUsers.contains(u)) visible += " (online)";
-        m_chats->addItem(visible);
+        auto* item = new QListWidgetItem();
+        item->setText("@" + u);
+        item->setData(Qt::UserRole, "@" + u);
+
+        if (m_onlineUsers.contains(u)) item->setIcon(onlineIcon);
+        else item->setIcon(offlineIcon);
+
+        m_chats->addItem(item);
     }
 }
