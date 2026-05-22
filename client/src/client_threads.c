@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 #ifndef _WIN32
  #include <signal.h>
@@ -44,6 +45,9 @@ static int validate_room_name(const char* room) {
  // keep consistent with server MAX_ROOM_NAME (32 incl '\0')
  if (strlen(room) >= 32) return 0;
  return 1;
+}
+static long long now_ts(void) {
+ return (long long)time(NULL);
 }
 
 static void print_incoming(const char* payload) {
@@ -248,7 +252,7 @@ printf(" /history_room <room>\n");
   }
 
   char out[2048];
-  snprintf(out, sizeof(out), "type=msg;to=%s;text=%s", to, text_enc);
+  snprintf(out, sizeof(out), "type=msg;to=%s;ts=%lld;text=%s", to, now_ts(), text_enc);
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
@@ -318,7 +322,7 @@ printf(" /history_room <room>\n");
   }
 
   char out[2048];
-  snprintf(out, sizeof(out), "type=room_msg;room=%s;text=%s", room, text_enc);
+  snprintf(out, sizeof(out), "type=room_msg;room=%s;ts=%lld;text=%s", room, now_ts(), text_enc);
   if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
