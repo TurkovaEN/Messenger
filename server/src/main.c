@@ -450,7 +450,9 @@ if (strcmp(type, "msg") == 0) {
 
     char to[MAX_USER];
     char text_enc[1024];
-char text[1024];
+    char text[1024];
+    char ts_s[32] = {0};
+    long long ts = 0;
 
     if (!kv_get(payload, "to", to, sizeof(to))) {
         const char* err = "type=error;text=missing to";
@@ -467,7 +469,9 @@ char text[1024];
  send_frame(c->sock, err, (uint32_t)strlen(err));
  return 0;
 }
-
+if (kv_get(payload, "ts", ts_s, sizeof(ts_s))) {
+ ts = atoll(ts_s);
+}
     int dst = find_by_user(clients, to);
     if (dst < 0) {
         const char* err = "type=error;text=user offline";
@@ -484,7 +488,7 @@ if (url_encode(text, text_net, sizeof(text_net)) != 0) {
 }
 
 char out[1400];
-snprintf(out, sizeof(out), "type=deliver;from=%s;text=%s", c->user, text_net);
+snprintf(out, sizeof(out), "type=deliver;from=%s;ts=%lld;text=%s", c->user, ts, text_net);
 if (send_frame(clients[dst].sock, out, (uint32_t)strlen(out)) != 0) {
  const char* err = "type=error;text=deliver failed";
  send_frame(c->sock, err, (uint32_t)strlen(err));
@@ -498,7 +502,7 @@ char hpath[256];
  history_path_dm(hpath, sizeof(hpath), c->user, to);
 
  char hline[1400];
- snprintf(hline, sizeof(hline), "from=%s;to=%s;text=%s", c->user, to, text);
+ snprintf(hline, sizeof(hline), "ts=%lld;from=%s;to=%s;text=%s", ts, c->user, to, text);
  history_append_line(hpath, hline);
     return 0;
 }
@@ -600,6 +604,9 @@ rooms_append(rooms_path, room);
   char room[MAX_ROOM_NAME];
   char text_enc[1024];
 char text[1024];
+char ts_s[32] = {0};
+long long ts = 0;
+
   if (!kv_get(payload, "room", room, sizeof(room))) {
    const char* err = "type=error;text=missing room";
    send_frame(c->sock, err, (uint32_t)strlen(err));
@@ -615,6 +622,10 @@ char text[1024];
  send_frame(c->sock, err, (uint32_t)strlen(err));
  return 0;
 }
+if (kv_get(payload, "ts", ts_s, sizeof(ts_s))) {
+ ts = atoll(ts_s);
+}
+
   int ri = find_room(rooms, room);
   if (ri < 0) {
    const char* err = "type=error;text=no such room";
@@ -634,7 +645,7 @@ if (url_encode(text, text_net, sizeof(text_net)) != 0) {
  send_frame(c->sock, err, (uint32_t)strlen(err));
  return 0;
 }
-  snprintf(out, sizeof(out), "type=room_deliver;room=%s;from=%s;text=%s", room, c->user, text_net);
+  snprintf(out, sizeof(out), "type=room_deliver;room=%s;from=%s;ts=%lld;text=%s", room, c->user, ts, text_net);
   room_broadcast(&rooms[ri], clients, out, -1);
 
   const char* ok = "type=info;text=room message sent";
@@ -644,7 +655,7 @@ if (url_encode(text, text_net, sizeof(text_net)) != 0) {
  history_path_room(hpath, sizeof(hpath), room);
 
  char hline[1400];
- snprintf(hline, sizeof(hline), "from=%s;room=%s;text=%s", c->user, room, text);
+ snprintf(hline, sizeof(hline), "ts=%lld;from=%s;room=%s;text=%s", ts, c->user, room, text);
  history_append_line(hpath, hline);
   return 0;
  }
