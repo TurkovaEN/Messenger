@@ -81,9 +81,33 @@ void NetClient::connectTo(const QString& host, quint16 port, const QString& user
     m_sock.connectToHost(host, port);
 }
 
+void NetClient::requestUsers() {
+    sendFrame("type=users");
+}
+
+void NetClient::requestRooms() {
+    sendFrame("type=rooms");
+}
+
+void NetClient::createRoom(const QString& room) {
+    QByteArray payload = "type=room_create;room=" + room.toUtf8();
+    sendFrame(payload);
+}
+
+void NetClient::joinRoom(const QString& room) {
+    QByteArray payload = "type=room_join;room=" + room.toUtf8();
+    sendFrame(payload);
+}
+
 void NetClient::sendDm(const QString& to, const QString& text) {
     QByteArray textEnc = urlEncode(text.toUtf8());
     QByteArray payload = "type=msg;to=" + to.toUtf8() + ";text=" + textEnc;
+    sendFrame(payload);
+}
+
+void NetClient::sendRoom(const QString& room, const QString& text) {
+    QByteArray textEnc = urlEncode(text.toUtf8());
+    QByteArray payload = "type=room_msg;room=" + room.toUtf8() + ";text=" + textEnc;
     sendFrame(payload);
 }
 
@@ -110,11 +134,14 @@ void NetClient::onConnected() {
 
 void NetClient::onReadyRead() {
     m_buf.append(m_sock.readAll());
+
     while (true) {
         if (m_buf.size() < 4) return;
+
         quint32 netLen = 0;
         memcpy(&netLen, m_buf.constData(), 4);
         quint32 len = qFromBigEndian(netLen);
+
         if (m_buf.size() < 4 + (int)len) return;
 
         QByteArray payload = m_buf.mid(4, (int)len);
@@ -145,20 +172,37 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         return;
     }
 
-    if (type == "info" || type == "error") {
-    QByteArray t = kvGet(payload, "text").toUtf8();
-    QString text = QString::fromUtf8(t);
-
-    if (type == "info") {
-        if (!m_loggedIn && text.startsWith("login ok")) {
-            m_loggedIn = true;
-            emit connected();
-        }
+    if (type == "users") {
+        QString list = kvGet(payload, "list");
+        QStringList items = list.split(",", Qt::SkipEmptyParts);
+        for (QString& s : items) s = s.trimmed();
+        emit usersList(items);
+        emit message(QString("[users] %1").arg(list));
+        return;
     }
 
-    emit message(QString("[%1] %2").arg(type, text));
-    return;
-}
+    if (type == "rooms") {
+        QString list = kvGet(payload, "list");
+        QStringList items = list.split(",", Qt::SkipEmptyParts);
+        for (QString& s : items) s = s.trimmed();
+        emit roomsList(items);
+        emit message(QString("[rooms] %1").arg(list));
+        return;
+    }
+
+    if (type == "info" || type == "error") {
+        QString text = kvGet(payload, "text");
+
+        if (type == "info") {
+            if (!m_loggedIn && text.startsWith("login ok")) {
+                m_loggedIn = true;
+                emit connected();
+            }
+        }
+
+        emit message(QString("[%1] %2").arg(type, text));
+        return;
+    }
 
     emit message("[raw] " + payload);
 }

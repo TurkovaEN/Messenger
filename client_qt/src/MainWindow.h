@@ -6,6 +6,8 @@ class QLineEdit;
 class QPushButton;
 class QTextEdit;
 class QCheckBox;
+class QListWidget;
+class QListWidgetItem;
 
 class NetClient;
 
@@ -23,6 +25,10 @@ private slots:
     void onNetDisconnected();
     void onNetError(const QString& msg);
     void onNetMessage(const QString& msg);
+void onRefreshClicked();
+void onCreateRoomClicked();
+void onJoinRoomClicked();
+void onChatSelected(QListWidgetItem* item);
 
 private:
     void setUiEnabled(bool connected);
@@ -40,4 +46,10 @@ private:
     QLineEdit* m_to;
     QLineEdit* m_text;
     QPushButton* m_sendBtn;
+
+    QListWidget* m_chats;
+QPushButton* m_refreshBtn;
+QPushButton* m_createRoomBtn;
+QPushButton* m_joinRoomBtn;
+QString m_currentChat; // "@bob" or "#room1"
 };

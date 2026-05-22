@@ -8,7 +8,9 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QLabel>
+#include <QListWidget>
 #include <QCheckBox>
+#include <QInputDialog>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
@@ -17,6 +19,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout();
 
+    // Connection row
     auto* connRow = new QHBoxLayout();
     m_host = new QLineEdit("127.0.0.1");
     m_port = new QLineEdit("5555");
@@ -34,32 +37,84 @@ MainWindow::MainWindow(QWidget* parent)
     connRow->addWidget(m_connectBtn);
     root->addLayout(connRow);
 
+    // Buttons row
+    auto* btnRow = new QHBoxLayout();
+    m_refreshBtn = new QPushButton("Refresh");
+    m_createRoomBtn = new QPushButton("Create room");
+    m_joinRoomBtn = new QPushButton("Join room");
+    btnRow->addWidget(m_refreshBtn);
+    btnRow->addWidget(m_createRoomBtn);
+    btnRow->addWidget(m_joinRoomBtn);
+    btnRow->addStretch(1);
+    root->addLayout(btnRow);
+
+    // Main area: chats list + log + send
+    auto* mainRow = new QHBoxLayout();
+
+    m_chats = new QListWidget();
+    m_chats->setMinimumWidth(220);
+    mainRow->addWidget(m_chats);
+
+    auto* rightCol = new QVBoxLayout();
+
     m_log = new QTextEdit();
     m_log->setReadOnly(true);
-    root->addWidget(m_log);
+    rightCol->addWidget(m_log);
 
     auto* sendRow = new QHBoxLayout();
-    m_to = new QLineEdit("bob");
     m_text = new QLineEdit();
     m_sendBtn = new QPushButton("Send");
-
-    sendRow->addWidget(new QLabel("To:"));
-    sendRow->addWidget(m_to);
     sendRow->addWidget(new QLabel("Text:"));
     sendRow->addWidget(m_text);
     sendRow->addWidget(m_sendBtn);
-    root->addLayout(sendRow);
+    rightCol->addLayout(sendRow);
+
+    mainRow->addLayout(rightCol);
+    root->addLayout(mainRow);
 
     central->setLayout(root);
     setCentralWidget(central);
 
+    // UI connections
     connect(m_connectBtn, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
     connect(m_sendBtn, &QPushButton::clicked, this, &MainWindow::onSendClicked);
+    connect(m_refreshBtn, &QPushButton::clicked, this, &MainWindow::onRefreshClicked);
+    connect(m_createRoomBtn, &QPushButton::clicked, this, &MainWindow::onCreateRoomClicked);
+    connect(m_joinRoomBtn, &QPushButton::clicked, this, &MainWindow::onJoinRoomClicked);
+    connect(m_chats, &QListWidget::itemClicked, this, &MainWindow::onChatSelected);
 
+    // NetClient connections
     connect(m_net, &NetClient::connected, this, &MainWindow::onNetConnected);
     connect(m_net, &NetClient::disconnected, this, &MainWindow::onNetDisconnected);
     connect(m_net, &NetClient::error, this, &MainWindow::onNetError);
     connect(m_net, &NetClient::message, this, &MainWindow::onNetMessage);
+
+    // Fill chats list
+    connect(m_net, &NetClient::usersList, this, [this](const QStringList& users){
+        // remove old @ items
+        for (int i = m_chats->count() - 1; i >= 0; --i) {
+            if (m_chats->item(i)->text().startsWith("@"))
+                delete m_chats->takeItem(i);
+        }
+        for (const QString& u : users) {
+            QString uu = u.trimmed();
+            if (uu.isEmpty()) continue;
+            m_chats->addItem("@" + uu);
+        }
+    });
+
+    connect(m_net, &NetClient::roomsList, this, [this](const QStringList& rooms){
+        // remove old # items
+        for (int i = m_chats->count() - 1; i >= 0; --i) {
+            if (m_chats->item(i)->text().startsWith("#"))
+                delete m_chats->takeItem(i);
+        }
+        for (const QString& r : rooms) {
+            QString rr = r.trimmed();
+            if (rr.isEmpty()) continue;
+            m_chats->addItem("#" + rr);
+        }
+    });
 
     setUiEnabled(false);
 }
@@ -67,7 +122,10 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow() = default;
 
 void MainWindow::setUiEnabled(bool connected) {
-    m_to->setEnabled(connected);
+    m_chats->setEnabled(connected);
+    m_refreshBtn->setEnabled(connected);
+    m_createRoomBtn->setEnabled(connected);
+    m_joinRoomBtn->setEnabled(connected);
     m_text->setEnabled(connected);
     m_sendBtn->setEnabled(connected);
 }
@@ -81,18 +139,57 @@ void MainWindow::onConnectClicked() {
     m_net->connectTo(host, port, user, m_register->isChecked());
 }
 
-void MainWindow::onSendClicked() {
-    const QString to = m_to->text().trimmed();
-    const QString text = m_text->text();
-    if (to.isEmpty() || text.isEmpty()) return;
+void MainWindow::onRefreshClicked() {
+    m_net->requestUsers();
+    m_net->requestRooms();
+}
 
-    m_net->sendDm(to, text);
+void MainWindow::onCreateRoomClicked() {
+    bool ok = false;
+    QString room = QInputDialog::getText(this, "Create room", "Room name:", QLineEdit::Normal, "", &ok).trimmed();
+    if (!ok || room.isEmpty()) return;
+    m_net->createRoom(room);
+    m_net->requestRooms();
+}
+
+void MainWindow::onJoinRoomClicked() {
+    bool ok = false;
+    QString room = QInputDialog::getText(this, "Join room", "Room name:", QLineEdit::Normal, "", &ok).trimmed();
+    if (!ok || room.isEmpty()) return;
+    m_net->joinRoom(room);
+}
+
+void MainWindow::onChatSelected(QListWidgetItem* item) {
+    if (!item) return;
+    m_currentChat = item->text();
+    m_log->append(QString("[ui] selected %1").arg(m_currentChat));
+}
+
+void MainWindow::onSendClicked() {
+    if (m_currentChat.isEmpty()) {
+        m_log->append("[error] select chat on the left");
+        return;
+    }
+    const QString text = m_text->text();
+    if (text.isEmpty()) return;
+
+    if (m_currentChat.startsWith("@")) {
+        QString to = m_currentChat.mid(1);
+        m_net->sendDm(to, text);
+    } else if (m_currentChat.startsWith("#")) {
+        QString room = m_currentChat.mid(1);
+        m_net->sendRoom(room, text);
+    } else {
+        m_log->append("[error] unknown chat type");
+    }
+
     m_text->clear();
 }
 
 void MainWindow::onNetConnected() {
-    m_log->append("[net] connected");
+    m_log->append("[net] login ok");
     setUiEnabled(true);
+    onRefreshClicked();
 }
 
 void MainWindow::onNetDisconnected() {
