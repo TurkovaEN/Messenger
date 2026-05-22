@@ -53,7 +53,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* mainRow = new QHBoxLayout();
 
     m_chats = new QListWidget();
-    m_chats->setMinimumWidth(160);
+    m_chats->setMinimumWidth(100);
     mainRow->addWidget(m_chats);
 
     auto* rightCol = new QVBoxLayout();
@@ -96,17 +96,22 @@ connect(m_net, &NetClient::historyEnd, this, &MainWindow::onHistoryEnd);
 
     // Fill chats list
     connect(m_net, &NetClient::usersList, this, [this](const QStringList& users){
-        // remove old @ items
-        for (int i = m_chats->count() - 1; i >= 0; --i) {
-            if (m_chats->item(i)->text().startsWith("@"))
-                delete m_chats->takeItem(i);
-        }
-        for (const QString& u : users) {
-            QString uu = u.trimmed();
-            if (uu.isEmpty()) continue;
-            m_chats->addItem("@" + uu);
-        }
-    });
+    m_onlineUsers.clear();
+    for (const QString& u : users) {
+        QString uu = u.trimmed();
+        if (!uu.isEmpty()) m_onlineUsers.insert(uu);
+    }
+    redrawUsers();
+});
+
+connect(m_net, &NetClient::usersAllList, this, [this](const QStringList& users){
+    m_allUsers.clear();
+    for (const QString& u : users) {
+        QString uu = u.trimmed();
+        if (!uu.isEmpty()) m_allUsers.insert(uu);
+    }
+    redrawUsers();
+});
 
     connect(m_net, &NetClient::roomsList, this, [this](const QStringList& rooms){
         // remove old # items
@@ -145,7 +150,8 @@ void MainWindow::onConnectClicked() {
 }
 
 void MainWindow::onRefreshClicked() {
-    m_net->requestUsers();
+    m_net->requestUsersAll();
+    m_net->requestUsers();   // online
     m_net->requestRooms();
 }
 
@@ -167,6 +173,11 @@ void MainWindow::onJoinRoomClicked() {
 void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!item) return;
     m_currentChat = item->text();
+
+    if (m_currentChat.startsWith("@")) {
+    int sp = m_currentChat.indexOf(' ');
+    if (sp >= 0) m_currentChat = m_currentChat.left(sp);
+}
 
     if (m_currentChat.startsWith("#")) {
         QString room = m_currentChat.mid(1);
@@ -202,8 +213,10 @@ void MainWindow::onSendClicked() {
 
     QString myLine = QString("me: %1").arg(text);
 
-    if (m_currentChat.startsWith("@")) {
-        QString to = m_currentChat.mid(1);
+if (m_currentChat.startsWith("@")) {
+    QString to = m_currentChat.mid(1);
+    int sp = to.indexOf(' ');
+    if (sp >= 0) to = to.left(sp);
         m_net->sendDm(to, text);
         m_chatLog[m_currentChat].append(myLine);
     } else if (m_currentChat.startsWith("#")) {
@@ -278,5 +291,22 @@ void MainWindow::onHistoryEnd(const QString& chatKey) {
             m_log->clear();
             m_log->append("[history] empty");
         }
+    }
+}
+
+void MainWindow::redrawUsers() {
+    // remove old @ items
+    for (int i = m_chats->count() - 1; i >= 0; --i) {
+        if (m_chats->item(i)->text().startsWith("@"))
+            delete m_chats->takeItem(i);
+    }
+
+    QStringList all = QStringList(m_allUsers.begin(), m_allUsers.end());
+    all.sort(Qt::CaseInsensitive);
+
+    for (const QString& u : all) {
+        QString visible = "@" + u;
+        if (m_onlineUsers.contains(u)) visible += " (online)";
+        m_chats->addItem(visible);
     }
 }

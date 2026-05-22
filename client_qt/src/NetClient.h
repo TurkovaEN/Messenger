@@ -12,6 +12,7 @@ public:
     void connectTo(const QString& host, quint16 port, const QString& user, bool doRegister);
 
     void requestUsers();
+    void requestUsersAll();
     void requestRooms();
 
     void createRoom(const QString& room);
@@ -37,6 +38,7 @@ signals:
 
     void historyItem(const QString& chatKey, const QString& line);
     void historyEnd(const QString& chatKey);
+    void usersAllList(const QStringList& users);
 
 private slots:
     void onConnected();

@@ -62,4 +62,7 @@ QString m_currentChat; // "@bob" or "#room1"
 QMap<QString, QStringList> m_chatLog;
 void redrawCurrentChat();
 QSet<QString> m_joinedRooms; // stores room names without '#'
+QSet<QString> m_allUsers;
+QSet<QString> m_onlineUsers;
+void redrawUsers();
 };

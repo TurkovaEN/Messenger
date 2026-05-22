@@ -84,6 +84,9 @@ void NetClient::connectTo(const QString& host, quint16 port, const QString& user
 void NetClient::requestUsers() {
     sendFrame("type=users");
 }
+void NetClient::requestUsersAll() {
+    sendFrame("type=users_all");
+}
 
 void NetClient::requestRooms() {
     sendFrame("type=rooms");
@@ -195,6 +198,14 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
         for (QString& s : items) s = s.trimmed();
         emit usersList(items);
         emit message(QString("[users] %1").arg(list));
+        return;
+    }
+    if (type == "users_all") {
+        QString list = kvGet(payload, "list");
+        QStringList items = list.split(",", Qt::SkipEmptyParts);
+        for (QString& s : items) s = s.trimmed();
+        emit usersAllList(items);
+        emit message(QString("[users_all] %1").arg(list));
         return;
     }
 
