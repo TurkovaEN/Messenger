@@ -21,11 +21,15 @@ public:
     void sendRoom(const QString& room, const QString& text);
 
 signals:
-    // emitted after "login ok"
-    void connected();
+    void connected();      // emitted after "login ok"
     void disconnected();
     void error(const QString& msg);
+
+    // debug / service messages
     void message(const QString& msg);
+
+    // chat-scoped messages: chatKey is "@bob" or "#room1"
+    void messageForChat(const QString& chatKey, const QString& line);
 
     void usersList(const QStringList& users);
     void roomsList(const QStringList& rooms);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QMap>
+#include <QStringList>
 
 class QLineEdit;
 class QPushButton;
@@ -29,6 +31,7 @@ void onRefreshClicked();
 void onCreateRoomClicked();
 void onJoinRoomClicked();
 void onChatSelected(QListWidgetItem* item);
+void onChatMessage(const QString& chatKey, const QString& line);
 
 private:
     void setUiEnabled(bool connected);
@@ -52,4 +55,6 @@ QPushButton* m_refreshBtn;
 QPushButton* m_createRoomBtn;
 QPushButton* m_joinRoomBtn;
 QString m_currentChat; // "@bob" or "#room1"
+QMap<QString, QStringList> m_chatLog;
+void redrawCurrentChat();
 };

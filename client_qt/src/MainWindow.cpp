@@ -88,6 +88,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_net, &NetClient::disconnected, this, &MainWindow::onNetDisconnected);
     connect(m_net, &NetClient::error, this, &MainWindow::onNetError);
     connect(m_net, &NetClient::message, this, &MainWindow::onNetMessage);
+     connect(m_net, &NetClient::messageForChat, this, &MainWindow::onChatMessage);
 
     // Fill chats list
     connect(m_net, &NetClient::usersList, this, [this](const QStringList& users){
@@ -162,7 +163,7 @@ void MainWindow::onJoinRoomClicked() {
 void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!item) return;
     m_currentChat = item->text();
-    m_log->append(QString("[ui] selected %1").arg(m_currentChat));
+    redrawCurrentChat();
 }
 
 void MainWindow::onSendClicked() {
@@ -173,16 +174,23 @@ void MainWindow::onSendClicked() {
     const QString text = m_text->text();
     if (text.isEmpty()) return;
 
+    QString myLine = QString("me: %1").arg(text);
+
     if (m_currentChat.startsWith("@")) {
         QString to = m_currentChat.mid(1);
         m_net->sendDm(to, text);
+        m_chatLog[m_currentChat].append(myLine);
     } else if (m_currentChat.startsWith("#")) {
         QString room = m_currentChat.mid(1);
         m_net->sendRoom(room, text);
+        m_chatLog[m_currentChat].append(myLine);
     } else {
         m_log->append("[error] unknown chat type");
+        return;
     }
 
+    // show immediately
+    m_log->append(myLine);
     m_text->clear();
 }
 
@@ -203,4 +211,23 @@ void MainWindow::onNetError(const QString& msg) {
 
 void MainWindow::onNetMessage(const QString& msg) {
     m_log->append(msg);
+}
+
+void MainWindow::redrawCurrentChat() {
+    m_log->clear();
+    if (m_currentChat.isEmpty()) return;
+
+    const auto lines = m_chatLog.value(m_currentChat);
+    for (const QString& s : lines) {
+        m_log->append(s);
+    }
+}
+
+void MainWindow::onChatMessage(const QString& chatKey, const QString& line) {
+    m_chatLog[chatKey].append(line);
+
+    // if user is currently viewing this chat, update UI
+    if (m_currentChat == chatKey) {
+        m_log->append(line);
+    }
 }

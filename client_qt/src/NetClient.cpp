@@ -155,20 +155,25 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
     const QString type = kvGet(payload, "type");
 
     if (type == "deliver") {
-        QByteArray from = kvGet(payload, "from").toUtf8();
+        QString from = kvGet(payload, "from");
         QByteArray textEnc = kvGet(payload, "text").toUtf8();
         QByteArray text = urlDecode(textEnc);
-        emit message(QString("%1: %2").arg(QString::fromUtf8(from), QString::fromUtf8(text)));
+
+        const QString chatKey = "@" + from;
+        const QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
+        emit messageForChat(chatKey, line);
         return;
     }
 
-    if (type == "room_deliver") {
-        QByteArray room = kvGet(payload, "room").toUtf8();
-        QByteArray from = kvGet(payload, "from").toUtf8();
+        if (type == "room_deliver") {
+        QString room = kvGet(payload, "room");
+        QString from = kvGet(payload, "from");
         QByteArray textEnc = kvGet(payload, "text").toUtf8();
         QByteArray text = urlDecode(textEnc);
-        emit message(QString("[%1] %2: %3")
-                     .arg(QString::fromUtf8(room), QString::fromUtf8(from), QString::fromUtf8(text)));
+
+        const QString chatKey = "#" + room;
+        const QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
+        emit messageForChat(chatKey, line);
         return;
     }
 
