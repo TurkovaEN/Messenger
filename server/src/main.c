@@ -348,6 +348,30 @@ log_info("Login user=%s", c->user);
   send_frame(c->sock, out, (uint32_t)strlen(out));
   return 0;
  }
+  if (strcmp(type, "users_all") == 0) {
+  FILE* f = fopen(users_path, "r");
+
+  char list[2048];
+  list[0] = '\0';
+
+  if (f) {
+   char line[128];
+   while (fgets(line, sizeof(line), f)) {
+    size_t n = strlen(line);
+    while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) { line[n-1] = '\0'; n--; }
+    if (line[0] == '\0') continue;
+
+    if (list[0]) strncat(list, ",", sizeof(list) - strlen(list) - 1);
+    strncat(list, line, sizeof(list) - strlen(list) - 1);
+   }
+   fclose(f);
+  }
+
+  char out[2300];
+  snprintf(out, sizeof(out), "type=users_all;list=%s", list);
+  send_frame(c->sock, out, (uint32_t)strlen(out));
+  return 0;
+ }
 
   if (strcmp(type, "rooms") == 0) {
   char list[1024];
