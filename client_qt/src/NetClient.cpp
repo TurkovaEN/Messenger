@@ -1,6 +1,7 @@
 #include "NetClient.h"
 
 #include <QtEndian>
+#include <QDateTime>
 
 static QString kvGet(const QString& s, const QString& key) {
     int pos = 0;
@@ -122,14 +123,16 @@ void NetClient::joinRoom(const QString& room) {
 
 void NetClient::sendDm(const QString& to, const QString& text) {
     QByteArray textEnc = urlEncode(text.toUtf8());
-    QByteArray payload = "type=msg;to=" + to.toUtf8() + ";text=" + textEnc;
-    sendFrame(payload);
+qint64 ts = QDateTime::currentSecsSinceEpoch();
+QByteArray payload = "type=msg;to=" + to.toUtf8() + ";ts=" + QByteArray::number(ts) + ";text=" + textEnc;
+sendFrame(payload);
 }
 
 void NetClient::sendRoom(const QString& room, const QString& text) {
     QByteArray textEnc = urlEncode(text.toUtf8());
-    QByteArray payload = "type=room_msg;room=" + room.toUtf8() + ";text=" + textEnc;
-    sendFrame(payload);
+qint64 ts = QDateTime::currentSecsSinceEpoch();
+QByteArray payload = "type=room_msg;room=" + room.toUtf8() + ";ts=" + QByteArray::number(ts) + ";text=" + textEnc;
+sendFrame(payload);
 }
 
 void NetClient::requestHistoryDm(const QString& peer, int limit) {
