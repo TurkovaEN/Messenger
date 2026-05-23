@@ -259,13 +259,10 @@ void MainWindow::onSendClicked() {
     if (text.isEmpty()) return;
 
     QString t = QDateTime::currentDateTime().toString("dd.MM HH:mm");
-QString myLine = QString("me: %1  ✓\n%2").arg(text, t);
-m_log->append(toHtmlMessageBlock(myLine));
+    QString myLine = QString("me: %1  ✓\n%2").arg(text, t);
 
-if (m_currentChat.startsWith("@")) {
-    QString to = m_currentChat.mid(1);
-    int sp = to.indexOf(' ');
-    if (sp >= 0) to = to.left(sp);
+    if (m_currentChat.startsWith("@")) {
+        QString to = m_currentChat.mid(1);
         m_net->sendDm(to, text);
         m_chatLog[m_currentChat].append(myLine);
     } else if (m_currentChat.startsWith("#")) {
@@ -277,9 +274,8 @@ if (m_currentChat.startsWith("@")) {
         return;
     }
 
-    // show immediately
-    m_log->append(myLine);
     m_text->clear();
+    redrawCurrentChat();
 }
 
 
@@ -294,6 +290,7 @@ void MainWindow::onNetError(const QString& msg) {
 }
 
 void MainWindow::onNetMessage(const QString& msg) {
+    m_log->append("[dbg] onNetMessage");
     m_log->append(msg);
 }
 
@@ -303,11 +300,12 @@ void MainWindow::redrawCurrentChat() {
 
     const auto lines = m_chatLog.value(m_currentChat);
     for (const QString& s : lines) {
-        m_log->append(s);
+        m_log->append(toHtmlMessageBlock(s));
     }
 }
 
 void MainWindow::onChatMessage(const QString& chatKey, const QString& line) {
+    if (m_currentChat == chatKey) m_log->append("[dbg] onChatMessage current");
     m_chatLog[chatKey].append(line);
 
     // if user is currently viewing this chat, update UI
