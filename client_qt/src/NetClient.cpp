@@ -19,21 +19,23 @@ static QString kvGet(const QString& s, const QString& key) {
 }
 
 static QString formatHistoryLine(const QString& raw, const QString& selfUser) {
-    // raw examples:
-    // "from=alice;to=bob;text=hello"
-    // "from=bob;to=alice;text=hi"
-    // "from=alice;room=room1;text=hey"
     QString from = kvGet(raw, "from");
     QString text = kvGet(raw, "text");
+    QString tsStr = kvGet(raw, "ts");
 
-    if (from.isEmpty() && text.isEmpty()) {
-        return raw;
-    }
+    qint64 ts = tsStr.toLongLong();
+    QString timeStr = ts > 0
+        ? QDateTime::fromSecsSinceEpoch(ts).toLocalTime().toString("dd.MM HH:mm")
+        : QString();
+
+    if (from.isEmpty() && text.isEmpty()) return raw;
 
     QString name = from;
     if (!selfUser.isEmpty() && from == selfUser) name = "me";
 
-    return QString("%1: %2").arg(name, text);
+    QString line = QString("%1: %2").arg(name, text);
+    if (!timeStr.isEmpty()) line += "\n" + timeStr;
+    return line;
 }
 
 static QByteArray urlEncode(const QByteArray& in) {
@@ -191,26 +193,44 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
     const QString type = kvGet(payload, "type");
 
     if (type == "deliver") {
-        QString from = kvGet(payload, "from");
-        QByteArray textEnc = kvGet(payload, "text").toUtf8();
-        QByteArray text = urlDecode(textEnc);
+       QString from = kvGet(payload, "from");
 
-        const QString chatKey = "@" + from;
-        const QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
-        emit messageForChat(chatKey, line);
-        return;
+    QString tsStr = kvGet(payload, "ts");
+    qint64 ts = tsStr.toLongLong();
+    QString timeStr = ts > 0
+        ? QDateTime::fromSecsSinceEpoch(ts).toLocalTime().toString("dd.MM HH:mm")
+        : QString();
+
+    QByteArray textEnc = kvGet(payload, "text").toUtf8();
+    QByteArray text = urlDecode(textEnc);
+
+    const QString chatKey = "@" + from;
+    QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
+    if (!timeStr.isEmpty()) line += "\n" + timeStr;
+
+    emit messageForChat(chatKey, line);
+    return;
     }
 
         if (type == "room_deliver") {
         QString room = kvGet(payload, "room");
-        QString from = kvGet(payload, "from");
-        QByteArray textEnc = kvGet(payload, "text").toUtf8();
-        QByteArray text = urlDecode(textEnc);
+    QString from = kvGet(payload, "from");
 
-        const QString chatKey = "#" + room;
-        const QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
-        emit messageForChat(chatKey, line);
-        return;
+    QString tsStr = kvGet(payload, "ts");
+    qint64 ts = tsStr.toLongLong();
+    QString timeStr = ts > 0
+        ? QDateTime::fromSecsSinceEpoch(ts).toLocalTime().toString("dd.MM HH:mm")
+        : QString();
+
+    QByteArray textEnc = kvGet(payload, "text").toUtf8();
+    QByteArray text = urlDecode(textEnc);
+
+    const QString chatKey = "#" + room;
+    QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
+    if (!timeStr.isEmpty()) line += "\n" + timeStr;
+
+    emit messageForChat(chatKey, line);
+    return;
     }
 
     if (type == "users") {

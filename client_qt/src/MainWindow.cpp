@@ -14,6 +14,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QIcon>
+#include <QDateTime>
 
 static QIcon makeCircleIcon(const QColor& color) {
     QPixmap pm(12, 12);
@@ -27,6 +28,17 @@ static QIcon makeCircleIcon(const QColor& color) {
     p.end();
 
     return QIcon(pm);
+}
+
+static QString toHtmlMessageBlock(const QString& s) {
+    // expects: "name: text" or "name: text\nDD.MM HH:mm"
+    QString esc = s.toHtmlEscaped();
+    int nl = esc.indexOf('\n');
+    if (nl < 0) return "<div>" + esc + "</div>";
+
+    QString top = esc.left(nl);
+    QString bottom = esc.mid(nl + 1);
+    return "<div>" + top + "<br><span style='color:gray;font-size:8pt'>" + bottom + "</span></div>";
 }
 
 MainWindow::MainWindow(NetClient* net, QWidget* parent)
@@ -77,6 +89,7 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
 
     m_log = new QTextEdit();
     m_log->setReadOnly(true);
+    m_log->setAcceptRichText(true);
     rightCol->addWidget(m_log);
 
     auto* sendRow = new QHBoxLayout();
@@ -245,7 +258,9 @@ void MainWindow::onSendClicked() {
     const QString text = m_text->text();
     if (text.isEmpty()) return;
 
-    QString myLine = QString("me: %1  ✓").arg(text);
+    QString t = QDateTime::currentDateTime().toString("dd.MM HH:mm");
+QString myLine = QString("me: %1  ✓\n%2").arg(text, t);
+m_log->append(toHtmlMessageBlock(myLine));
 
 if (m_currentChat.startsWith("@")) {
     QString to = m_currentChat.mid(1);
@@ -297,7 +312,7 @@ void MainWindow::onChatMessage(const QString& chatKey, const QString& line) {
 
     // if user is currently viewing this chat, update UI
     if (m_currentChat == chatKey) {
-        m_log->append(line);
+        m_log->append(toHtmlMessageBlock(line));
     }
 }
 
@@ -309,7 +324,7 @@ void MainWindow::onHistoryItem(const QString& chatKey, const QString& line) {
         if (m_loadingHistory) {
             if (m_log->toPlainText() == "[history] loading...") m_log->clear();
         }
-        m_log->append(line);
+        m_log->append(toHtmlMessageBlock(line));
     }
 }
 
