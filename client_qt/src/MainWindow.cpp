@@ -219,6 +219,11 @@ void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!key.isEmpty()) m_currentChat = key;
     else m_currentChat = item->text();
 
+    m_chatOpenedTs = QDateTime::currentSecsSinceEpoch();
+    m_newSeparatorShown = false;
+    // remember unread state BEFORE we reset unread counter
+m_showNewAfterHistory = (m_unread.value(m_currentChat, 0) > 0);
+
     // mark as read
     m_unread[m_currentChat] = 0;
     setItemBadge(item, m_currentChat, 0);
@@ -309,7 +314,14 @@ void MainWindow::onNetMessage(const QString& msg) {
     }
 }
 
-void MainWindow::onChatMessage(const QString& chatKey, const QString& line) {
+void MainWindow::onChatMessage(const QString& chatKey, const QString& line, qint64 ts) {
+   if (m_currentChat == chatKey && !m_loadingHistory) {
+    if (!m_newSeparatorShown && ts > 0 && ts >= m_chatOpenedTs) {
+        m_newSeparatorShown = true;
+        m_chatLog[chatKey].append("--- NEW ---");
+        m_log->append(toHtmlMessageBlock("--- NEW ---"));
+    }
+}
     m_chatLog[chatKey].append(line);
 
     // unread
@@ -343,13 +355,17 @@ void MainWindow::onHistoryItem(const QString& chatKey, const QString& line) {
 void MainWindow::onHistoryEnd(const QString& chatKey) {
     if (m_currentChat == chatKey) {
         m_loadingHistory = false;
+
         if (m_chatLog[chatKey].isEmpty()) {
             m_log->clear();
             m_log->append("[history] empty");
-        } else {
-            // separator for new messages
-            m_chatLog[chatKey].append("--- NEW ---");
-            m_log->append(toHtmlMessageBlock("--- NEW ---"));
+        }
+
+        // show NEW separator once after loading history if this chat had unread messages
+        if (m_showNewAfterHistory) {
+            m_showNewAfterHistory = false;
+            //m_chatLog[chatKey].append("--- NEW ---");
+            //m_log->append(toHtmlMessageBlock("--- NEW ---"));
         }
     }
 }

@@ -194,6 +194,12 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
 
     if (type == "deliver") {
        QString from = kvGet(payload, "from");
+       if (from == m_user) {
+    return; // already shown locally
+}
+       if (from == m_user) {
+    return; // already shown locally
+}
 
     QString tsStr = kvGet(payload, "ts");
     qint64 ts = tsStr.toLongLong();
@@ -208,7 +214,7 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
     QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
     if (!timeStr.isEmpty()) line += "\n" + timeStr;
 
-    emit messageForChat(chatKey, line);
+    emit messageForChat(chatKey, line, ts);
     return;
     }
 
@@ -229,7 +235,7 @@ void NetClient::processFrame(const QByteArray& payloadBytes) {
     QString line = QString("%1: %2").arg(from, QString::fromUtf8(text));
     if (!timeStr.isEmpty()) line += "\n" + timeStr;
 
-    emit messageForChat(chatKey, line);
+    emit messageForChat(chatKey, line, ts);
     return;
     }
 

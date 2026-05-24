@@ -31,7 +31,7 @@ signals:
 
     void message(const QString& msg);
 
-    void messageForChat(const QString& chatKey, const QString& line);
+    void messageForChat(const QString& chatKey, const QString& line, qint64 ts);
 
     void usersList(const QStringList& users);
     void roomsList(const QStringList& rooms);

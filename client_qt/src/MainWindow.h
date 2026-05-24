@@ -31,7 +31,7 @@ private slots:
     void onNetError(const QString& msg);
     void onNetMessage(const QString& msg);
 
-    void onChatMessage(const QString& chatKey, const QString& line);
+    void onChatMessage(const QString& chatKey, const QString& line, qint64 ts);
 
     void onHistoryItem(const QString& chatKey, const QString& line);
     void onHistoryEnd(const QString& chatKey);
@@ -61,8 +61,12 @@ private:
 
     QSet<QString> m_joinedRooms; // room names without '#'
     bool m_loadingHistory = false;
-
+    qint64 m_chatOpenedTs = 0;        // when current chat was opened
+    bool m_newSeparatorShown = false; // NEW separator already shown for current opened chat
+    bool m_showNewAfterHistory = false;
     // users
     QSet<QString> m_allUsers;
     QSet<QString> m_onlineUsers;
+
+    QMap<QString, int> m_unread; // chatKey -> count
 };
