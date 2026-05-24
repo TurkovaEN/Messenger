@@ -51,9 +51,39 @@ static long long now_ts(void) {
 }
 
 static void print_incoming(const char* payload) {
-    char type[32];
+    char type[32] = {0};
+
     if (!kv_get(payload, "type", type, sizeof(type))) {
-         if (strcmp(type, "users") == 0) {
+        printf("[server] %s\n", payload);
+        return;
+    }
+
+    if (strcmp(type, "users") == 0) {
+        char list[1600] = {0};
+        kv_get(payload, "list", list, sizeof(list));
+        printf("[users] %s\n", list[0] ? list : "<empty>");
+        return;
+    }
+
+    if (strcmp(type, "history_item") == 0) {
+        char chat[32] = {0};
+        char line_enc[1600] = {0};
+        char line[1600] = {0};
+        kv_get(payload, "chat", chat, sizeof(chat));
+        kv_get(payload, "line", line_enc, sizeof(line_enc));
+        if (url_decode(line_enc, line, sizeof(line)) != 0) {
+            snprintf(line, sizeof(line), "<bad encoding>");
+        }
+        printf("[history %s] %s\n", chat[0] ? chat : "?", line);
+        return;
+    }
+
+    if (strcmp(type, "history_end") == 0) {
+        printf("[history] end\n");
+        return;
+    }
+
+    if (strcmp(type, "deliver") == 0) {
   char list[1600] = {0};
   kv_get(payload, "list", list, sizeof(list));
   printf("[users] %s\n", list[0] ? list : "<empty>");
