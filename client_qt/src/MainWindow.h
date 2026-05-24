@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QStringList>
 #include <QSet>
+#include <QTimer>
 
 class QListWidget;
 class QListWidgetItem;
@@ -54,6 +55,7 @@ private:
     QTextEdit* m_log = nullptr;
     QLineEdit* m_text = nullptr;
     QPushButton* m_sendBtn = nullptr;
+    QTimer* m_refreshTimer = nullptr;
 
     // state
     QString m_currentChat; // "@bob" or "#room1"

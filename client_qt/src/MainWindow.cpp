@@ -173,6 +173,11 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
         }
     });
 
+    // auto refresh: users/rooms every 3 seconds
+m_refreshTimer = new QTimer(this);
+m_refreshTimer->setInterval(3000);
+connect(m_refreshTimer, &QTimer::timeout, this, &MainWindow::onRefreshClicked);
+m_refreshTimer->start();
     setUiEnabled(true);
     onRefreshClicked();
 }
@@ -301,6 +306,7 @@ void MainWindow::onSendClicked() {
 void MainWindow::onNetDisconnected() {
     m_log->append("[net] disconnected");
     setUiEnabled(false);
+    if (m_refreshTimer) m_refreshTimer->stop();
 }
 
 void MainWindow::onNetError(const QString& msg) {
