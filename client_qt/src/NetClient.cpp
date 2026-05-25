@@ -1,7 +1,10 @@
 #include "NetClient.h"
-
 #include <QtEndian>
 #include <QDateTime>
+
+extern "C" {
+#include "../../common/crypto.h"
+}
 
 static QString kvGet(const QString& s, const QString& key) {
     int pos = 0;
@@ -87,6 +90,7 @@ static QByteArray urlDecode(const QByteArray& in) {
 NetClient::NetClient(QObject* parent)
     : QObject(parent)
 {
+    crypto_init();
     connect(&m_sock, &QTcpSocket::connected, this, &NetClient::onConnected);
     connect(&m_sock, &QTcpSocket::readyRead, this, &NetClient::onReadyRead);
     connect(&m_sock, &QTcpSocket::disconnected, this, &NetClient::onDisconnected);
@@ -149,15 +153,24 @@ void NetClient::requestHistoryRoom(const QString& room, int limit) {
     sendFrame(payload);
 }
 
-void NetClient::sendFrame(const QByteArray& payload) {
-    quint32 len = (quint32)payload.size();
-    quint32 netLen = qToBigEndian(len);
+void NetClient::sendFrame(const QByteArray& payloadPlain) {
+    // encrypt payloadPlain -> send as type=enc;data=...
+    char b64[8192];
+    if (crypto_encrypt_b64((const unsigned char*)payloadPlain.constData(),
+                           (size_t)payloadPlain.size(),
+                           b64, sizeof(b64)) != 0) {
+        emit error("crypto_encrypt_b64 failed");
+        return;
+    }
 
+    QByteArray payloadEnc = "type=enc;data=" + QByteArray(b64);
+
+    quint32 len = (quint32)payloadEnc.size();
+    quint32 netLen = qToBigEndian(len);
     QByteArray frame;
     frame.resize(4);
     memcpy(frame.data(), &netLen, 4);
-    frame.append(payload);
-
+    frame.append(payloadEnc);
     m_sock.write(frame);
 }
 
@@ -190,7 +203,33 @@ void NetClient::onReadyRead() {
 
 void NetClient::processFrame(const QByteArray& payloadBytes) {
     QString payload = QString::fromUtf8(payloadBytes);
-    const QString type = kvGet(payload, "type");
+
+// decrypt if needed
+const QString outerType = kvGet(payload, "type");
+if (outerType == "enc") {
+    const QString data = kvGet(payload, "data");
+    if (data.isEmpty()) {
+        emit message("[error] enc frame without data");
+        return;
+    }
+
+    QByteArray b64 = data.toUtf8();
+    QByteArray plainBuf;
+    plainBuf.resize(4096);
+
+    size_t plainLen = 0;
+    if (crypto_decrypt_b64(b64.constData(),
+                           (unsigned char*)plainBuf.data(),
+                           (size_t)plainBuf.size(),
+                           &plainLen) != 0) {
+        emit message("[error] decrypt failed");
+        return;
+    }
+
+    payload = QString::fromUtf8(plainBuf.constData(), (int)plainLen);
+}
+
+const QString type = kvGet(payload, "type");
 
     if (type == "deliver") {
        QString from = kvGet(payload, "from");

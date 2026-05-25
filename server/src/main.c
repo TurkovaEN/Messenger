@@ -8,6 +8,7 @@
 #include "../../common/urlcodec.h"
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
+#include "../../common/crypto.h"
 #include "logger.h"
 #include <signal.h>
 
@@ -38,6 +39,51 @@ typedef struct Room {
  int members[MAX_ROOM_MEMBERS]; // indexes in clients[]
  int member_count;
 } Room;
+
+static int send_payload(sock_t s, const char* plain_payload) {
+    // Encrypt plain_payload and send as type=enc;data=...
+    char b64[4096];
+    if (crypto_encrypt_b64((const unsigned char*)plain_payload, strlen(plain_payload),
+                           b64, sizeof(b64)) != 0) {
+        return -1;
+    }
+    char out[4600];
+    snprintf(out, sizeof(out), "type=enc;data=%s", b64);
+    return send_frame(s, out, (uint32_t)strlen(out));
+}
+
+static int recv_payload(sock_t s, char* out_plain, uint32_t out_plain_sz, uint32_t* out_len) {
+    // Receive one frame, if encrypted -> decrypt, else pass through
+    char buf[4600];
+    uint32_t n = 0;
+    int rr = recv_frame(s, buf, (uint32_t)(sizeof(buf) - 1), &n);
+    if (rr != 0) return rr;
+    buf[n] = '\0';
+
+    char type[32] = {0};
+    if (!kv_get(buf, "type", type, sizeof(type))) {
+        // no type, treat as plain
+        if (n >= out_plain_sz) return -2;
+        memcpy(out_plain, buf, n + 1);
+        if (out_len) *out_len = n;
+        return 0;
+    }
+
+    if (strcmp(type, "enc") == 0) {
+        char data[4096] = {0};
+        if (!kv_get(buf, "data", data, sizeof(data))) return -1;
+        size_t plen = 0;
+        if (crypto_decrypt_b64(data, (unsigned char*)out_plain, out_plain_sz, &plen) != 0) return -1;
+        if (out_len) *out_len = (uint32_t)plen;
+        return 0;
+    }
+
+    // plain payload
+    if (n >= out_plain_sz) return -2;
+    memcpy(out_plain, buf, n + 1);
+    if (out_len) *out_len = n;
+    return 0;
+}
 
 static void usage(const char* prog) {
     fprintf(stderr, "Usage: %s <port> <log_path> [users_path]\n", prog);
@@ -127,7 +173,7 @@ static void room_broadcast(Room* r, Client* clients, const char* msg, int skip_i
   int idx = r->members[i];
   if (idx == skip_idx) continue;
   if (!clients[idx].used) continue;
-  if (send_frame(clients[idx].sock, msg, (uint32_t)strlen(msg)) != 0) {
+  if (send_payload(clients[idx].sock, msg) != 0) {
    // ignore errors here; disconnects will be handled by main loop
   }
  }
@@ -345,7 +391,7 @@ log_info("Login user=%s", c->user);
 
   char out[1200];
   snprintf(out, sizeof(out), "type=users;list=%s", list);
-  send_frame(c->sock, out, (uint32_t)strlen(out));
+  send_payload(c->sock, out);
   return 0;
  }
   if (strcmp(type, "users_all") == 0) {
@@ -678,6 +724,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "net_init failed, err=%d\n", net_last_error());
         return 1;
     }
+    crypto_init();
 if (log_init(log_path) != 0) {
     fprintf(stderr, "Cannot open log file: %s\n", log_path);
     net_cleanup();
@@ -799,7 +846,7 @@ while (!g_stop) {
 
         char payload[MAX_PAYLOAD + 1];
         uint32_t n = 0;
-        int rr = recv_frame(clients[i].sock, payload, (uint32_t)MAX_PAYLOAD, &n);
+        int rr = recv_payload(clients[i].sock, payload, MAX_PAYLOAD, &n);
         if (rr != 0) {
             printf("Client disconnected (slot=%d, user=%s)\n", i,
                    clients[i].user[0] ? clients[i].user : "<none>");
@@ -835,5 +882,6 @@ sock_close(ls);
 log_info("Server stop");
 log_close();
 net_cleanup();
+crypto_cleanup();
 return 0;
 }

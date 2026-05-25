@@ -12,6 +12,7 @@
 #include "../../common/net_frame.h"
 #include "../../common/kv.h"
 #include "../../common/urlcodec.h"
+#include "../../common/crypto.h"
 
 
 #ifdef _WIN32
@@ -31,6 +32,63 @@ typedef struct RecvCtx {
  pthread_t main_thread;
 #endif
 } RecvCtx;
+
+static int send_payload(sock_t s, const char* plain_payload) {
+    char b64[8192];
+
+    if (crypto_encrypt_b64((const unsigned char*)plain_payload, strlen(plain_payload),
+                           b64, sizeof(b64)) != 0) {
+        fprintf(stderr, "[dbg] crypto_encrypt_b64 failed\n");
+        return -1;
+    }
+
+    char out[9000];
+    int wn = snprintf(out, sizeof(out), "type=enc;data=%s", b64);
+    if (wn < 0 || (size_t)wn >= sizeof(out)) {
+        fprintf(stderr, "[dbg] snprintf(enc) truncated\n");
+        return -1;
+    }
+
+    int sr = send_frame(s, out, (uint32_t)strlen(out));
+    if (sr != 0) {
+        fprintf(stderr, "[dbg] send_frame failed, err=%d\n", net_last_error());
+        return -1;
+    }
+    return 0;
+}
+
+static int recv_payload(sock_t s, char* out_plain, uint32_t out_plain_sz, uint32_t* out_len) {
+    // Receive one frame, if encrypted -> decrypt, else pass through
+    char buf[4600];
+    uint32_t n = 0;
+    int rr = recv_frame(s, buf, (uint32_t)(sizeof(buf) - 1), &n);
+    if (rr != 0) return rr;
+    buf[n] = '\0';
+
+    char type[32] = {0};
+    if (!kv_get(buf, "type", type, sizeof(type))) {
+        // no type, treat as plain
+        if (n >= out_plain_sz) return -2;
+        memcpy(out_plain, buf, n + 1);
+        if (out_len) *out_len = n;
+        return 0;
+    }
+
+    if (strcmp(type, "enc") == 0) {
+        char data[4096] = {0};
+        if (!kv_get(buf, "data", data, sizeof(data))) return -1;
+        size_t plen = 0;
+        if (crypto_decrypt_b64(data, (unsigned char*)out_plain, out_plain_sz, &plen) != 0) return -1;
+        if (out_len) *out_len = (uint32_t)plen;
+        return 0;
+    }
+
+    // plain payload
+    if (n >= out_plain_sz) return -2;
+    memcpy(out_plain, buf, n + 1);
+    if (out_len) *out_len = n;
+    return 0;
+}
 
 static void trim_newline(char* s) {
     if (!s) return;
@@ -84,80 +142,46 @@ static void print_incoming(const char* payload) {
     }
 
     if (strcmp(type, "deliver") == 0) {
-  char list[1600] = {0};
-  kv_get(payload, "list", list, sizeof(list));
-  printf("[users] %s\n", list[0] ? list : "<empty>");
-  return;
- }
-  if (strcmp(type, "history_item") == 0) {
- char chat[32] = {0};
- char line_enc[1600] = {0};
- char line[1600] = {0};
-
- kv_get(payload, "chat", chat, sizeof(chat));
- kv_get(payload, "line", line_enc, sizeof(line_enc));
-
- if (url_decode(line_enc, line, sizeof(line)) != 0) {
-  snprintf(line, sizeof(line), "<bad encoding>");
- }
-
- printf("[history %s] %s\n", chat[0] ? chat : "?", line);
- return;
-}
-
- if (strcmp(type, "history_end") == 0) {
-  printf("[history] end\n");
-  return;
- }
-        printf("[server] %s\n", payload);
+        char from[64] = {0};
+        char text_enc[1024] = {0};
+        char text[1024] = {0};
+        kv_get(payload, "from", from, sizeof(from));
+        kv_get(payload, "text", text_enc, sizeof(text_enc));
+        if (url_decode(text_enc, text, sizeof(text)) != 0) {
+            snprintf(text, sizeof(text), "<bad encoding>");
+        }
+        printf("%s: %s\n", from[0] ? from : "?", text);
         return;
     }
 
-    if (strcmp(type, "deliver") == 0) {
- char from[64] = {0};
- char text_enc[1024] = {0};
- char text[1024] = {0};
+    if (strcmp(type, "room_deliver") == 0) {
+        char room[64] = {0};
+        char from[64] = {0};
+        char text_enc[1024] = {0};
+        char text[1024] = {0};
+        kv_get(payload, "room", room, sizeof(room));
+        kv_get(payload, "from", from, sizeof(from));
+        kv_get(payload, "text", text_enc, sizeof(text_enc));
+        if (url_decode(text_enc, text, sizeof(text)) != 0) {
+            snprintf(text, sizeof(text), "<bad encoding>");
+        }
+        printf("[%s] %s: %s\n", room[0] ? room : "room", from[0] ? from : "?", text);
+        return;
+    }
 
- kv_get(payload, "from", from, sizeof(from));
- kv_get(payload, "text", text_enc, sizeof(text_enc));
-
- if (url_decode(text_enc, text, sizeof(text)) != 0) {
-  snprintf(text, sizeof(text), "<bad encoding>");
- }
-
- printf("%s: %s\n", from[0] ? from : "?", text);
- return;
-}
-
- if (strcmp(type, "room_deliver") == 0) {
- char room[64] = {0};
- char from[64] = {0};
- char text_enc[1024] = {0};
- char text[1024] = {0};
-
- kv_get(payload, "room", room, sizeof(room));
- kv_get(payload, "from", from, sizeof(from));
- kv_get(payload, "text", text_enc, sizeof(text_enc));
-
- if (url_decode(text_enc, text, sizeof(text)) != 0) {
-  snprintf(text, sizeof(text), "<bad encoding>");
- }
-
- printf("[%s] %s: %s\n", room[0] ? room : "room", from[0] ? from : "?", text);
- return;
-}
     if (strcmp(type, "info") == 0 || strcmp(type, "error") == 0) {
         char text[1024] = {0};
         kv_get(payload, "text", text, sizeof(text));
-         if (strcmp(type, "info") == 0 && strcmp(text, "delivered") == 0) {
-  return;
- }
+        if (strcmp(type, "info") == 0 && strcmp(text, "delivered") == 0) {
+            return; // hide internal ack
+        }
         printf("[%s] %s\n", type, text[0] ? text : payload);
         return;
     }
 
     printf("[server] %s\n", payload);
 }
+
 
 #ifdef _WIN32
 static DWORD WINAPI recv_thread_fn(LPVOID arg)
@@ -170,7 +194,7 @@ static void* recv_thread_fn(void* arg)
 
 while (ctx->running) {
  uint32_t n = 0;
- int rr = recv_frame(ctx->s, payload, 2048, &n);
+ int rr = recv_payload(ctx->s, payload, 2048, &n);
  if (rr != 0) {
   printf("[info] connection closed\n");
   fflush(stdout);
@@ -283,7 +307,7 @@ printf(" /history_room <room>\n");
 
   char out[2048];
   snprintf(out, sizeof(out), "type=msg;to=%s;ts=%lld;text=%s", to, now_ts(), text_enc);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -298,7 +322,7 @@ printf(" /history_room <room>\n");
   char out[256];
   snprintf(out, sizeof(out), "type=room_create;room=%s", room);
 
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -312,7 +336,7 @@ printf(" /history_room <room>\n");
   if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
   char out[512];
   snprintf(out, sizeof(out), "type=room_join;room=%s", room);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -326,7 +350,7 @@ printf(" /history_room <room>\n");
   if (!validate_room_name(room)) { printf("[error] bad room name (1..31 chars)\n"); continue; }
   char out[512];
   snprintf(out, sizeof(out), "type=room_leave;room=%s", room);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -353,7 +377,7 @@ printf(" /history_room <room>\n");
 
   char out[2048];
   snprintf(out, sizeof(out), "type=room_msg;room=%s;ts=%lld;text=%s", room, now_ts(), text_enc);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -362,7 +386,7 @@ printf(" /history_room <room>\n");
  }
   if (strcmp(line, "/users") == 0) {
   const char* out = "type=users";
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -375,7 +399,7 @@ printf(" /history_room <room>\n");
   if (!room[0]) { printf("[error] usage: /history_room <room>\n"); continue; }
   char out[512];
   snprintf(out, sizeof(out), "type=history_room;room=%s;limit=20", room);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
@@ -389,7 +413,7 @@ printf(" /history_room <room>\n");
   if (!peer[0]) { printf("[error] usage: /history <user>\n"); continue; }
   char out[512];
   snprintf(out, sizeof(out), "type=history_dm;peer=%s;limit=20", peer);
-  if (send_frame(s, out, (uint32_t)strlen(out)) != 0) {
+  if (send_payload(s, out) != 0) {
    printf("[error] send failed\n");
    ctx.running = 0;
    break;
