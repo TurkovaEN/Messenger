@@ -1,3 +1,4 @@
+// Реализация главного окна Qt-клиента: UI, кэш сообщений и обработка сигналов NetClient
 #include "MainWindow.h"
 #include "NetClient.h"
 
@@ -16,31 +17,31 @@
 #include <QPixmap>
 #include <QIcon>
 
+// Создаёт маленькую круговую иконку заданного цвета (онлайн/оффлайн/состоит в комнате)
 static QIcon makeCircleIcon(const QColor& color) {
     QPixmap pm(12, 12);
     pm.fill(Qt::transparent);
-
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
     p.drawEllipse(1, 1, 10, 10);
     p.end();
-
     return QIcon(pm);
 }
 
+// Преобразует одну строку лога в HTML-блок, выделяя дату/время мелким шрифтом
 static QString toHtmlMessageBlock(const QString& s) {
     // expects: "name: text" or "name: text\nDD.MM HH:mm"
     QString esc = s.toHtmlEscaped();
     int nl = esc.indexOf('\n');
     if (nl < 0) return "<div>" + esc + "</div>";
-
     QString top = esc.left(nl);
     QString bottom = esc.mid(nl + 1);
     return "<div>" + top + "<br><span style='color:gray;font-size:8pt'>" + bottom + "</span></div>";
 }
 
+// Ищет элемент QListWidget по chatKey, который хранится в Qt::UserRole
 static QListWidgetItem* findItemByChatKey(QListWidget* list, const QString& chatKey) {
     for (int i = 0; i < list->count(); i++) {
         auto* it = list->item(i);
@@ -49,6 +50,7 @@ static QListWidgetItem* findItemByChatKey(QListWidget* list, const QString& chat
     return nullptr;
 }
 
+// Обновляет текст элемента (badge непрочитанных сообщений)
 static void setItemBadge(QListWidgetItem* it, const QString& baseText, int unread) {
     if (!it) return;
     if (unread > 0) it->setText(baseText + QString(" (%1)").arg(unread));
@@ -59,6 +61,7 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     : QMainWindow(parent),
       m_net(net)
 {
+    // Центральный виджет и общий layout
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout();
 
@@ -68,26 +71,26 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     m_createRoomBtn = new QPushButton("Create room");
     m_joinRoomBtn = new QPushButton("Join room");
     m_joinRoomBtn->hide(); // auto-join by click
+
     btnRow->addWidget(m_refreshBtn);
     btnRow->addWidget(m_createRoomBtn);
     btnRow->addWidget(m_joinRoomBtn);
     btnRow->addStretch(1);
     root->addLayout(btnRow);
 
-    // Main area
+    // Main area: слева список чатов, справа история и ввод
     auto* mainRow = new QHBoxLayout();
-
     m_chats = new QListWidget();
     m_chats->setFixedWidth(180);
     mainRow->addWidget(m_chats, 0);
 
     auto* rightCol = new QVBoxLayout();
-
     m_log = new QTextEdit();
     m_log->setReadOnly(true);
     m_log->setAcceptRichText(true);
     rightCol->addWidget(m_log);
 
+    // Нижняя панель ввода текста
     auto* sendRow = new QHBoxLayout();
     m_text = new QLineEdit();
     m_sendBtn = new QPushButton("Send");
@@ -99,6 +102,7 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     mainRow->addLayout(rightCol, 1);
     root->addLayout(mainRow);
 
+    // Применяем layout к окну
     central->setLayout(root);
     setCentralWidget(central);
 
@@ -113,7 +117,6 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     connect(m_net, &NetClient::disconnected, this, &MainWindow::onNetDisconnected);
     connect(m_net, &NetClient::error, this, &MainWindow::onNetError);
     connect(m_net, &NetClient::message, this, &MainWindow::onNetMessage);
-
     connect(m_net, &NetClient::messageForChat, this, &MainWindow::onChatMessage);
     connect(m_net, &NetClient::historyItem, this, &MainWindow::onHistoryItem);
     connect(m_net, &NetClient::historyEnd, this, &MainWindow::onHistoryEnd);
@@ -146,21 +149,24 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
                 delete m_chats->takeItem(i);
         }
 
-        const QIcon joinedIcon = makeCircleIcon(QColor(70, 130, 255)); // blue
+        // Иконки: вступил/не вступил
+        const QIcon joinedIcon = makeCircleIcon(QColor(70, 130, 255));     // blue
         const QIcon notJoinedIcon = makeCircleIcon(QColor(150, 150, 150)); // gray
 
+        // Добавляем комнаты в список
         for (const QString& r : rooms) {
             QString rr = r.trimmed();
             if (rr.isEmpty()) continue;
 
             QString key = "#" + rr;
-
             auto* item = new QListWidgetItem();
             item->setData(Qt::UserRole, key);
 
+            // Выставляем иконку по статусу участия
             if (m_joinedRooms.contains(rr)) item->setIcon(joinedIcon);
             else item->setIcon(notJoinedIcon);
 
+            // Выставляем бейдж непрочитанных
             int unread = m_unread.value(key, 0);
             setItemBadge(item, key, unread);
             if (unread > 0) {
@@ -174,16 +180,19 @@ MainWindow::MainWindow(NetClient* net, QWidget* parent)
     });
 
     // auto refresh: users/rooms every 3 seconds
-m_refreshTimer = new QTimer(this);
-m_refreshTimer->setInterval(3000);
-connect(m_refreshTimer, &QTimer::timeout, this, &MainWindow::onRefreshClicked);
-m_refreshTimer->start();
+    m_refreshTimer = new QTimer(this);
+    m_refreshTimer->setInterval(3000);
+    connect(m_refreshTimer, &QTimer::timeout, this, &MainWindow::onRefreshClicked);
+    m_refreshTimer->start();
+
+    // Включаем UI и сразу загружаем списки
     setUiEnabled(true);
     onRefreshClicked();
 }
 
 MainWindow::~MainWindow() = default;
 
+// Включает/выключает основные элементы UI, когда сеть недоступна
 void MainWindow::setUiEnabled(bool connected) {
     m_chats->setEnabled(connected);
     m_refreshBtn->setEnabled(connected);
@@ -192,42 +201,53 @@ void MainWindow::setUiEnabled(bool connected) {
     m_sendBtn->setEnabled(connected);
 }
 
+// Запрашивает у сервера обновление списков пользователей и комнат
 void MainWindow::onRefreshClicked() {
     m_net->requestUsersAll();
-    m_net->requestUsers();   // online
+    m_net->requestUsers(); // online
     m_net->requestRooms();
 }
 
+// Создание комнаты через QInputDialog
 void MainWindow::onCreateRoomClicked() {
     bool ok = false;
-    QString room = QInputDialog::getText(this, "Create room", "Room name:", QLineEdit::Normal, "", &ok).trimmed();
+    QString room = QInputDialog::getText(this, "Create room", "Room name:",
+                                         QLineEdit::Normal, "", &ok).trimmed();
     if (!ok || room.isEmpty()) return;
 
+    // Создаём комнату на сервере и обновляем список
     m_net->createRoom(room);
     m_net->requestRooms();
 }
 
+// Ручной join (в текущей логике почти не используется, т.к. join делается при клике на чат)
 void MainWindow::onJoinRoomClicked() {
     // not used (auto-join), keep for future
     bool ok = false;
-    QString room = QInputDialog::getText(this, "Join room", "Room name:", QLineEdit::Normal, "", &ok).trimmed();
+    QString room = QInputDialog::getText(this, "Join room", "Room name:",
+                                         QLineEdit::Normal, "", &ok).trimmed();
     if (!ok || room.isEmpty()) return;
+
     m_net->joinRoom(room);
     m_joinedRooms.insert(room);
     onRefreshClicked();
 }
 
+// Выбор чата слева: пользователь "@name" или комната "#room"
 void MainWindow::onChatSelected(QListWidgetItem* item) {
     if (!item) return;
 
+    // chatKey хранится в UserRole, если его нет — используем текст элемента
     QString key = item->data(Qt::UserRole).toString();
     if (!key.isEmpty()) m_currentChat = key;
     else m_currentChat = item->text();
 
+    // Сохраняем время открытия чата (для "NEW" разделителя)
     m_chatOpenedTs = QDateTime::currentSecsSinceEpoch();
     m_newSeparatorShown = false;
+
     // remember unread state BEFORE we reset unread counter
-m_showNewAfterHistory = (m_unread.value(m_currentChat, 0) > 0);
+    m_showNewAfterHistory = (m_unread.value(m_currentChat, 0) > 0);
 
     // mark as read
     m_unread[m_currentChat] = 0;
@@ -253,6 +273,7 @@ m_showNewAfterHistory = (m_unread.value(m_currentChat, 0) > 0);
     m_log->clear();
     m_log->append("[history] loading...");
 
+    // Запрашиваем историю у сервера в зависимости от типа чата
     if (m_currentChat.startsWith("@")) {
         QString peer = m_currentChat.mid(1);
         m_net->requestHistoryDm(peer, 50);
@@ -265,6 +286,7 @@ m_showNewAfterHistory = (m_unread.value(m_currentChat, 0) > 0);
     }
 }
 
+// Полная перерисовка окна чата из кэша
 void MainWindow::redrawCurrentChat() {
     m_log->clear();
     if (m_currentChat.isEmpty()) return;
@@ -275,17 +297,22 @@ void MainWindow::redrawCurrentChat() {
     }
 }
 
+// Отправка сообщения из поля ввода в текущий чат
 void MainWindow::onSendClicked() {
     if (m_currentChat.isEmpty()) {
         m_log->append("[error] select chat on the left");
         return;
     }
+
+    // Берём текст из поля ввода
     const QString text = m_text->text();
     if (text.isEmpty()) return;
 
+    // Формируем строку, которую отображаем локально сразу
     QString t = QDateTime::currentDateTime().toString("dd.MM HH:mm");
-    QString myLine = QString("me: %1  ✓\n%2").arg(text, t);
+    QString myLine = QString("me: %1 \n%2").arg(text, t);
 
+    // Разбираем, DM это или комната, и отправляем через NetClient
     if (m_currentChat.startsWith("@")) {
         QString to = m_currentChat.mid(1);
         m_net->sendDm(to, text);
@@ -299,20 +326,24 @@ void MainWindow::onSendClicked() {
         return;
     }
 
+    // Очищаем ввод и перерисовываем чат
     m_text->clear();
     redrawCurrentChat();
 }
 
+// Обработчик разрыва соединения
 void MainWindow::onNetDisconnected() {
     m_log->append("[net] disconnected");
     setUiEnabled(false);
     if (m_refreshTimer) m_refreshTimer->stop();
 }
 
+// Текстовая ошибка сети
 void MainWindow::onNetError(const QString& msg) {
     m_log->append("[error] " + msg);
 }
 
+// Сервисные сообщения NetClient (info/error)
 void MainWindow::onNetMessage(const QString& msg) {
     // keep only useful messages
     if (msg.startsWith("[info]") || msg.startsWith("[error]")) {
@@ -320,20 +351,23 @@ void MainWindow::onNetMessage(const QString& msg) {
     }
 }
 
+// Новое сообщение для конкретного чата (DM или room)
 void MainWindow::onChatMessage(const QString& chatKey, const QString& line, qint64 ts) {
-   if (m_currentChat == chatKey && !m_loadingHistory) {
-    if (!m_newSeparatorShown && ts > 0 && ts >= m_chatOpenedTs) {
-        m_newSeparatorShown = true;
-        m_chatLog[chatKey].append("--- NEW ---");
-        m_log->append(toHtmlMessageBlock("--- NEW ---"));
+    // Если чат открыт и мы не грузим историю — можем показать разделитель NEW
+    if (m_currentChat == chatKey && !m_loadingHistory) {
+        if (!m_newSeparatorShown && ts > 0 && ts >= m_chatOpenedTs) {
+            m_newSeparatorShown = true;
+            m_chatLog[chatKey].append("--- NEW ---");
+            m_log->append(toHtmlMessageBlock("--- NEW ---"));
+        }
     }
-}
+
+    // Добавляем строку в кэш
     m_chatLog[chatKey].append(line);
 
     // unread
     if (m_currentChat != chatKey) {
         m_unread[chatKey] = m_unread.value(chatKey, 0) + 1;
-
         auto* it = findItemByChatKey(m_chats, chatKey);
         if (it) {
             setItemBadge(it, chatKey, m_unread[chatKey]);
@@ -343,13 +377,18 @@ void MainWindow::onChatMessage(const QString& chatKey, const QString& line, qint
         }
     }
 
+    // Если чат открыт — отображаем строку сразу
     if (m_currentChat == chatKey && !m_loadingHistory) {
         m_log->append(toHtmlMessageBlock(line));
     }
 }
 
+// Элемент истории (приходит пачкой после запроса history)
 void MainWindow::onHistoryItem(const QString& chatKey, const QString& line) {
+    // Добавляем в кэш
     m_chatLog[chatKey].append(line);
+
+    // Если это текущий чат — выводим на экран
     if (m_currentChat == chatKey) {
         if (m_loadingHistory && m_log->toPlainText() == "[history] loading...") {
             m_log->clear();
@@ -358,10 +397,12 @@ void MainWindow::onHistoryItem(const QString& chatKey, const QString& line) {
     }
 }
 
+// Конец истории: снимаем флаг загрузки и при необходимости показываем "empty"
 void MainWindow::onHistoryEnd(const QString& chatKey) {
     if (m_currentChat == chatKey) {
         m_loadingHistory = false;
 
+        // Если история пустая — показываем соответствующее сообщение
         if (m_chatLog[chatKey].isEmpty()) {
             m_log->clear();
             m_log->append("[history] empty");
@@ -370,12 +411,14 @@ void MainWindow::onHistoryEnd(const QString& chatKey) {
         // show NEW separator once after loading history if this chat had unread messages
         if (m_showNewAfterHistory) {
             m_showNewAfterHistory = false;
+            // В исходнике показ NEW после истории отключён (закомментирован)
             //m_chatLog[chatKey].append("--- NEW ---");
             //m_log->append(toHtmlMessageBlock("--- NEW ---"));
         }
     }
 }
 
+// Перерисовка списка пользователей (@user) на основе m_allUsers и m_onlineUsers
 void MainWindow::redrawUsers() {
     // remove old @ items
     for (int i = m_chats->count() - 1; i >= 0; --i) {
@@ -383,21 +426,25 @@ void MainWindow::redrawUsers() {
             delete m_chats->takeItem(i);
     }
 
-    const QIcon onlineIcon = makeCircleIcon(QColor(0, 200, 0));      // green
-    const QIcon offlineIcon = makeCircleIcon(QColor(150, 150, 150)); // gray
+    // Иконки онлайн/оффлайн
+    const QIcon onlineIcon = makeCircleIcon(QColor(0, 200, 0));       // green
+    const QIcon offlineIcon = makeCircleIcon(QColor(150, 150, 150));  // gray
 
+    // Берём всех зарегистрированных и сортируем для стабильного списка
     QStringList all = QStringList(m_allUsers.begin(), m_allUsers.end());
     all.sort(Qt::CaseInsensitive);
 
+    // Добавляем каждого пользователя как отдельный чат "@name"
     for (const QString& u : all) {
         QString key = "@" + u;
-
         auto* item = new QListWidgetItem();
         item->setData(Qt::UserRole, key);
 
+        // Выставляем иконку статуса
         if (m_onlineUsers.contains(u)) item->setIcon(onlineIcon);
         else item->setIcon(offlineIcon);
 
+        // Применяем бейдж непрочитанных
         int unread = m_unread.value(key, 0);
         setItemBadge(item, key, unread);
         if (unread > 0) {

@@ -1,4 +1,6 @@
 #pragma once
+
+// Интерфейс простого парсера протокольных строк вида "a=1;b=2;type=login"
 #include <stddef.h>
 
 /**
