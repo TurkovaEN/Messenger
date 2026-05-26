@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "windows-x64-release",
+      "displayName": "Windows x64 Release",
+      "generator": "Visual Studio 16 2019",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/5.15.2/msvc2019_64",
+        "OPENSSL_ROOT_DIR": "C:/OpenSSL",
+        "OPENSSL_INCLUDE_DIR": "C:/OpenSSL/include",
+        "OPENSSL_CRYPTO_LIBRARY": "C:/OpenSSL/lib/VC/x64/MT/libcrypto.lib",
+        "OPENSSL_SSL_LIBRARY": "C:/OpenSSL/lib/VC/x64/MT/libssl.lib",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x64-release",
+      "configurePreset": "windows-x64-release",
+      "configuration": "Release"
+    }
+  ]
+}
