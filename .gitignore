@@ -31,6 +31,8 @@ client/client
 .vscode/
 *.user
 *.suo
+vcpkg.*.nupkg
+vs/
 
 # Visual Studio build directories
 **/Debug/
@@ -45,3 +47,6 @@ server/logs/*.log
 client/logs/*.log
 server/data/users.txt
 server/history/*.txt
+server/data/rooms.txt
+
+
